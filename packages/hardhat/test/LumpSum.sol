@@ -6,8 +6,6 @@ import { Test } from "forge-std/src/Test.sol";
 import "hardhat/console.sol";
 
 contract LumpSumTestDummy is LumpSum {
-    uint256 public constant msgValue = 1000;
-
     uint256 public deposited;
     function deposit(uint256 amount) internal override {
         deposited += amount;
@@ -22,8 +20,8 @@ contract LumpSumTestDummy is LumpSum {
         transferTo = to;
     }
 
-    function inferFullSum() internal pure override returns(uint256 amount){
-        return msgValue;
+    function inferFullSum() internal override returns(uint256 amount){
+        return msg.value;
     }
 
     uint256 public refundAmount;
@@ -39,24 +37,34 @@ contract LumpSumTest is Test {
     address constant GIVER = address(1);
     address constant GRANTEE = address(2);
     uint16 constant DAYS_TO_MATURE = 100;
+    uint256 constant DEFAULT_AMOUNT = 100;
 
     LumpSumTestDummy c;
 
     function setUp() public {
         c = new LumpSumTestDummy();
+        vm.deal(GIVER, DEFAULT_AMOUNT * 100);
     }
     
-    function makeADeposit() public returns (uint256 index){
-        uint256 amount = c.msgValue();
-        vm.deal(GIVER, amount * 100);
+    function makeADeposit(uint256 amount) public returns (uint256 index){
         vm.prank(GIVER);
         return c.fundLumpSumGrant{value: amount}(GRANTEE, DAYS_TO_MATURE);
+    }
+
+    function readAmountFromEscrow(uint256 index) public view returns (uint256 amount) {
+        (,,,,,,,amount) = c.escrows(index);
+        return amount;
+    }
+
+    function readReleasedFlagFromEscrow(uint256 index) public view returns (bool isReleased) {
+        (,,,isReleased,,,,) = c.escrows(index);
+        return isReleased;
     }
 
     // MATURITY STAGE CALCULATION
 
     function testCalcMaturityStageUpperBorder() public {
-        uint256 fundedTimestamp = 1;
+        uint48 fundedTimestamp = 1;
         uint16 daysToMature = 77;
 
         assertEq(c.calcMaturityStageUpperBorder(fundedTimestamp, daysToMature, MaturityStages.FirstQuarter), 1_663_201, "Border timestamp is wrong");
@@ -69,7 +77,7 @@ contract LumpSumTest is Test {
     }
 
     function testLookupMaturityStage() public {
-        uint256 fundedTimestamp = 1;
+        uint48 fundedTimestamp = 1;
         uint16 daysToMature = 77;
 
         vm.warp(15);
@@ -171,7 +179,7 @@ contract LumpSumTest is Test {
 
     function testDisablingPreventsDepositing() public {
         assertEq(c.getEscrowCount(), 0, "No escrows at the begining");
-        makeADeposit();
+        makeADeposit(DEFAULT_AMOUNT);
         assertEq(c.getEscrowCount(), 1, "Deposited successfully");
 
         vm.prank(c.owner());
@@ -184,7 +192,7 @@ contract LumpSumTest is Test {
     }
 
     function testDisablingDoesNotPreventRevoking() public {
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(c.owner());
         c.setDisabledStatus(true);
@@ -195,7 +203,7 @@ contract LumpSumTest is Test {
     }
 
     function testDisablingDoesNotPreventReleasing() public {
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(c.owner());
         c.setDisabledStatus(true);
@@ -203,30 +211,35 @@ contract LumpSumTest is Test {
         vm.warp(block.timestamp + (DAYS_TO_MATURE + 1) * 1 days);
         vm.prank(GRANTEE);
         c.release(index);
-        assertEq(c.transferAmount(), c.msgValue(), "Release must occur dispite the contract being disabled");
+        assertEq(c.transferAmount(), DEFAULT_AMOUNT, "Release must occur dispite the contract being disabled");
     }
 
-    // ESCROW BASICS
+    // GUARDS
 
     function testEscrowMustExist() public {
         vm.expectRevert();
         c.release(100);
     }
 
+    function testZeroDepositsAreDisallowed() public {
+        vm.expectRevert();
+        makeADeposit(0);
+    }
+
     // LUMP SUM DEPOSIT
 
     function testCanDepositFunds() public {
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         (
+            address grantee,
+            uint256 fundedTimestamp,
+            uint16 daysToMature,
             bool isReleased,
             bool isRevokedBeforeMaturing,
             bool isRevokedAfterMaturing,
-            uint16 daysToMature,
             address giver,
-            address grantee,
-            uint256 amount,
-            uint256 fundedTimestamp
+            uint256 amount
         ) = c.escrows(index);
 
         assertEq(
@@ -235,52 +248,94 @@ contract LumpSumTest is Test {
             "Must be unset"
         );
 
-        uint256 lumpsum = c.msgValue() - c.calcCommission(c.msgValue());
+        uint256 lumpsum = DEFAULT_AMOUNT - c.calcCommission(DEFAULT_AMOUNT);
 
         assertEq(c.deposited(), lumpsum, "A,ount must be deposited");
         assertEq(amount, lumpsum, "Amount must be correct");
         assertEq(daysToMature, DAYS_TO_MATURE, "Maturity period must be the same");
         assertEq(giver, GIVER, "Giver must persist");
         assertEq(grantee, GRANTEE, "Grantee must persist");
-        assertEq(fundedTimestamp, block.timestamp, "Timestamp is of the current block");
+        assertEq(fundedTimestamp, uint48(block.timestamp), "Timestamp is of the current block");
+    }
+
+    function testMultipleEscrowsAreDepositedCorrectly() public {
+        makeADeposit(DEFAULT_AMOUNT);
+
+        uint256 warpTo = 8765;
+        vm.warp(warpTo);
+
+        uint256 grantees_a = 9543;
+        uint16 to_mature = 1234;
+        vm.deal(GRANTEE, DEFAULT_AMOUNT * 1000);
+        vm.prank(GRANTEE);
+        c.fundLumpSumGrant{value: grantees_a}(GIVER, to_mature);
+
+        uint256 another = 2999;
+        makeADeposit(another);
+        
+        assertEq(readAmountFromEscrow(0), DEFAULT_AMOUNT - c.calcCommission(DEFAULT_AMOUNT), 'Slot must store its escrow');
+
+        (
+            address grantee,
+            uint256 fundedTimestamp,
+            uint16 daysToMature,
+            bool isReleased,
+            bool isRevokedBeforeMaturing,
+            bool isRevokedAfterMaturing,
+            address giver,
+            uint256 amount
+        ) = c.escrows(1);
+
+        assertEq(
+            isReleased || isRevokedBeforeMaturing || isRevokedAfterMaturing,
+            false,
+            "Must be unset"
+        );
+        assertEq(amount, grantees_a - c.calcCommission(grantees_a), "Amount must be correct");
+        assertEq(daysToMature, to_mature, "Maturity period must be the same");
+        assertEq(giver, GRANTEE, "Giver must persist");
+        assertEq(grantee, GIVER, "Grantee must persist");
+        assertEq(fundedTimestamp, uint48(warpTo), "Timestamp is of the current block");
+
+        assertEq(readAmountFromEscrow(2), another - c.calcCommission(another), 'Slot must store its escrow');
     }
 
     function testEscrowCanBeOnlyReleasedByGrantee() public {
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(GIVER);
         vm.expectRevert();
         c.release(index);
-        (bool isReleased,,,,,,,) = c.escrows(index);
+        bool isReleased = readReleasedFlagFromEscrow(index);
         assertEq(isReleased, false, "Release must not occur");
     }
 
     function testEscrowCanNotBeReleasedBeforeMaturing() public {
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(GRANTEE);
         vm.expectRevert();
         c.release(index);
 
-        (bool isReleased,,,,,,,) = c.escrows(index);
+        bool isReleased = readReleasedFlagFromEscrow(index);
         assertEq(isReleased, false, "Release must not occur");
 
         vm.warp(block.timestamp + (DAYS_TO_MATURE + 1) * 1 days);
         vm.prank(GRANTEE);
         c.release(index);
 
-        (isReleased,,,,,,,) = c.escrows(index);
+        (,,,isReleased,,,,) = c.escrows(index);
         assertEq(isReleased, true, "Release must occur");
     }
 
     function testEscrowCanNotBeReleasedTwice() public {
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.warp(block.timestamp + (DAYS_TO_MATURE + 1) * 1 days);
         vm.prank(GRANTEE);
         c.release(index);
 
-        (bool isReleased,,,,,,,) = c.escrows(index);
+        bool isReleased = readReleasedFlagFromEscrow(index);
         assertEq(isReleased, true, "Release must occur");
 
         vm.prank(GRANTEE);
@@ -289,74 +344,71 @@ contract LumpSumTest is Test {
     }
 
     function testEscrowCanBeRevokedInFullBeforeTheFirstQuarter() public {
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(GIVER);
         c.revoke(index);
         (
             ,
+            ,
+            ,
+            ,
             bool isRevokedBeforeMaturing,
             ,
             ,
-            ,
-            ,
-            uint256 amount,
-            
+            uint256 amount
         ) = c.escrows(index);
         assertEq(isRevokedBeforeMaturing, true, "Revoke must be logged");
         assertEq(amount, 0, "Refund must be complete, not partial");
-        assertEq(c.refundAmount(), c.msgValue() - c.calcCommission(c.msgValue()), "Refund must be complete, not partial");
+        assertEq(c.refundAmount(), DEFAULT_AMOUNT - c.calcCommission(DEFAULT_AMOUNT), "Refund must be complete, not partial");
     }
 
     function testEscrowCanBeRevokedInHalfBeforeTheSecondQuarter() public {
-        uint256 comission = c.calcCommission(c.msgValue());
-        uint256 half = (c.msgValue() - comission) / 2; // 499
+        uint256 comission = c.calcCommission(DEFAULT_AMOUNT);
+        uint256 half = (DEFAULT_AMOUNT - comission) / 2; // 499
 
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(GIVER);
         vm.warp(block.timestamp + (DAYS_TO_MATURE / 2 - 1) * 1 days);
         c.revoke(index);
         assertEq(c.refundAmount(), half, "Revoke before the 2/4 must be halved");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, c.msgValue() - comission - half, "The other half stays on escrow");
+        assertEq(readAmountFromEscrow(index), DEFAULT_AMOUNT - comission - half, "The other half stays on escrow");
     }
 
     function testEscrowCanBeRevokedInThirdBeforeTheThirdQuarter() public {
-        uint256 comission = c.calcCommission(c.msgValue());
-        uint256 third = (c.msgValue() - comission) / 3; // 333
+        uint256 comission = c.calcCommission(DEFAULT_AMOUNT);
+        uint256 third = (DEFAULT_AMOUNT - comission) / 3; // 333
 
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(GIVER);
         vm.warp(block.timestamp + (DAYS_TO_MATURE / 2 + 1) * 1 days);
         c.revoke(index);
         assertEq(c.refundAmount(), third, "Revoke before the 3/4 must be 1/3 of the amount");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, c.msgValue() - comission - third, "The other 2/3 stays on escrow");
+        assertEq(readAmountFromEscrow(index), DEFAULT_AMOUNT - comission - third, "The other 2/3 stays on escrow");
     }
 
     function testEscrowCanBeRevokedInQuarterBeforeTheFourthQuarter() public {
-        uint256 comission = c.calcCommission(c.msgValue());
-        uint256 quarter = (c.msgValue() - comission) / 4; // 249
+        uint256 comission = c.calcCommission(DEFAULT_AMOUNT);
+        uint256 quarter = (DEFAULT_AMOUNT - comission) / 4; // 249
 
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(GIVER);
         vm.warp(block.timestamp + (DAYS_TO_MATURE - 1) * 1 days);
         c.revoke(index);
         assertEq(c.refundAmount(), quarter, "Revoke before the 4/4 must be 1/4 of the amount");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, c.msgValue() - comission - quarter, "The other 3/4 stays on escrow");
+        assertEq(readAmountFromEscrow(index), DEFAULT_AMOUNT - comission - quarter, "The other 3/4 stays on escrow");
     }
 
     function testEscrowCanNotBeRevokedAnfterMaturingFor30Days() public {
-        uint256 comission = c.calcCommission(c.msgValue());
+        uint256 comission = c.calcCommission(DEFAULT_AMOUNT);
 
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(GIVER);
         vm.warp(block.timestamp + (DAYS_TO_MATURE + 1) * 1 days);
@@ -368,105 +420,96 @@ contract LumpSumTest is Test {
         vm.prank(GIVER);
         vm.warp(block.timestamp + (DAYS_TO_MATURE + 31) * 1 days);
         c.revoke(index);
-        assertEq(c.refundAmount(), c.msgValue() - comission, "Revoke after maturing + 30 days must be complete");
+        assertEq(c.refundAmount(), DEFAULT_AMOUNT - comission, "Revoke after maturing + 30 days must be complete");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, 0, "Nothing stays on escrow");
+        assertEq(readAmountFromEscrow(index), 0, "Nothing stays on escrow");
     }
 
     function testEscrowCanNotBeRevokedTwiceBefore() public {
-        uint256 comission = c.calcCommission(c.msgValue());
-        uint256 half = (c.msgValue() - comission) / 2; // 499
+        uint256 comission = c.calcCommission(DEFAULT_AMOUNT);
+        uint256 half = (DEFAULT_AMOUNT - comission) / 2; // 499
 
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(GIVER);
         vm.warp(block.timestamp + (DAYS_TO_MATURE / 2 - 1) * 1 days);
         c.revoke(index);
         assertEq(c.refundAmount(), half, "Revoke before the 2/4 must be halved");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, c.msgValue() - comission - half, "The other half stays on escrow");
+        assertEq(readAmountFromEscrow(index), DEFAULT_AMOUNT - comission - half, "The other half stays on escrow");
 
         vm.prank(GIVER);
         vm.expectRevert();
         c.revoke(index);
-        (,,,,,,amount,) = c.escrows(index);
-        assertEq(amount, c.msgValue() - comission - half, "The other half stays on escrow");
+        assertEq(readAmountFromEscrow(index), DEFAULT_AMOUNT - comission - half, "The other half stays on escrow");
     }
 
     function testEscrowCanNotBeRevokedTwiceAfter() public {
-        uint256 comission = c.calcCommission(c.msgValue());
+        uint256 comission = c.calcCommission(DEFAULT_AMOUNT);
 
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(GIVER);
         vm.warp(block.timestamp + (DAYS_TO_MATURE + 31) * 1 days);
         c.revoke(index);
-        assertEq(c.refundAmount(), c.msgValue() - comission, "Revoke after maturing + 30 days must be complete");
+        assertEq(c.refundAmount(), DEFAULT_AMOUNT - comission, "Revoke after maturing + 30 days must be complete");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, 0, "Nothing stays on escrow");
+        assertEq(readAmountFromEscrow(index), 0, "Nothing stays on escrow");
 
         vm.prank(GIVER);
         vm.expectRevert();
         c.revoke(index);
-        (,,,,,, amount,) = c.escrows(index);
-        assertEq(amount, 0, "Escrow can not dip below zero");
-        assertEq(c.refundAmount(), c.msgValue() - comission, "Refund amount is not doubled");
+        assertEq(readAmountFromEscrow(index), 0, "Escrow can not dip below zero");
+        assertEq(c.refundAmount(), DEFAULT_AMOUNT - comission, "Refund amount is not doubled");
     }
 
     function testEscrowCanBeRevokedBeforeThenAfter() public {
-        uint256 comission = c.calcCommission(c.msgValue());
-        uint256 half = (c.msgValue() - comission) / 2; // 499
+        uint256 comission = c.calcCommission(DEFAULT_AMOUNT);
+        uint256 half = (DEFAULT_AMOUNT - comission) / 2; // 499
 
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.prank(GIVER);
         vm.warp(block.timestamp + (DAYS_TO_MATURE / 2 - 1) * 1 days);
         c.revoke(index);
         assertEq(c.refundAmount(), half, "Revoke before the 2/4 must be halved");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, c.msgValue() - comission - half, "The other half stays on escrow");
+        assertEq(readAmountFromEscrow(index), DEFAULT_AMOUNT - comission - half, "The other half stays on escrow");
 
         vm.prank(GIVER);
         vm.expectRevert();
         c.revoke(index);
-        (,,,,,,amount,) = c.escrows(index);
-        assertEq(amount, c.msgValue() - comission - half, "The other half stays on escrow");
+        assertEq(readAmountFromEscrow(index), DEFAULT_AMOUNT - comission - half, "The other half stays on escrow");
 
         vm.prank(GIVER);
         vm.warp(block.timestamp + (DAYS_TO_MATURE + 31) * 1 days);
         c.revoke(index);
-        assertEq(c.refundAmount(), c.msgValue() - comission, "Revoke after maturing + 30 days must be complete");
+        assertEq(c.refundAmount(), DEFAULT_AMOUNT - comission, "Revoke after maturing + 30 days must be complete");
 
-        (,,,,,,amount,) = c.escrows(index);
-        assertEq(amount, 0, "Nothing stays on escrow");
+        assertEq(readAmountFromEscrow(index), 0, "Nothing stays on escrow");
 
         vm.prank(GIVER);
         vm.expectRevert();
         c.revoke(index);
-        (,,,,,, amount,) = c.escrows(index);
-        assertEq(amount, 0, "Escrow can not dip below zero");
-        assertEq(c.refundAmount(), c.msgValue() - comission, "Refund amount is not doubled");
+        assertEq(readAmountFromEscrow(index), 0, "Escrow can not dip below zero");
+        assertEq(c.refundAmount(), DEFAULT_AMOUNT - comission, "Refund amount is not doubled");
     }
 
     // EVENTS
 
     function testFundingAnEscrowEmitsAnEvent() public {
-        uint256 comission = c.calcCommission(c.msgValue());
-        uint256 lumpsum = (c.msgValue() - comission);
+        uint256 comission = c.calcCommission(DEFAULT_AMOUNT);
+        uint256 lumpsum = (DEFAULT_AMOUNT - comission);
         vm.expectEmit(true, true, true, true, address(c));
         emit LumpSumDeposited(GIVER, GRANTEE, 0, lumpsum);
-        uint256 index = makeADeposit();
+        makeADeposit(DEFAULT_AMOUNT);
     }
 
     function testRevokingAnEscrowEmitsAnEvent() public {
-        uint256 comission = c.calcCommission(c.msgValue());
-        uint256 lumpsum = (c.msgValue() - comission);
+        uint256 comission = c.calcCommission(DEFAULT_AMOUNT);
+        uint256 lumpsum = (DEFAULT_AMOUNT - comission);
 
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.expectEmit(true, true, true, true, address(c));
         emit LumpSumRevoked(GIVER, GRANTEE, 0, lumpsum, lumpsum);
@@ -475,10 +518,7 @@ contract LumpSumTest is Test {
     }
 
     function testReleasingAnEscrowEmitsAnEvent() public {
-        uint256 comission = c.calcCommission(c.msgValue());
-        uint256 lumpsum = (c.msgValue() - comission);
-
-        uint256 index = makeADeposit();
+        uint256 index = makeADeposit(DEFAULT_AMOUNT);
 
         vm.expectEmit(true, true, true, false, address(c));
         emit LumpSumReleased(GIVER, GRANTEE, 0);

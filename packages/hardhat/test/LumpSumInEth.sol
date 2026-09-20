@@ -25,6 +25,11 @@ contract LumpSumInEthTest is Test {
         return c.fundLumpSumGrant{value: TOTAL_AMOUNT}(GRANTEE, DAYS_TO_MATURE);
     }
 
+    function readAmountFromEscrow(uint256 index) public view returns (uint256 amount) {
+        (,,,,,,,amount) = c.escrows(index);
+        return amount;
+    }
+
     // LUMP SUM DEPOSIT
 
     function testCanDepositFunds() public {
@@ -32,14 +37,14 @@ contract LumpSumInEthTest is Test {
         uint256 comission = c.calcCommission(TOTAL_AMOUNT);
 
         (
+            ,
+            ,
+            ,
             bool isReleased,
             bool isRevokedBeforeMaturing,
             bool isRevokedAfterMaturing,
             ,
-            ,
-            ,
-            uint256 amount,
-            
+            uint256 amount
         ) = c.escrows(index);
 
         assertEq(
@@ -62,8 +67,7 @@ contract LumpSumInEthTest is Test {
         vm.expectRevert();
         c.release(index);
         assertEq(GIVER.balance, 99 * TOTAL_AMOUNT, "Giver gets nothing in case of error");
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, TOTAL_AMOUNT - c.calcCommission(TOTAL_AMOUNT), "Everything stays");
+        assertEq(readAmountFromEscrow(index), TOTAL_AMOUNT - c.calcCommission(TOTAL_AMOUNT), "Everything stays");
     }
 
     function testEscrowCanNotBeReleasedBeforeMaturing() public {
@@ -74,21 +78,19 @@ contract LumpSumInEthTest is Test {
         c.release(index);
         assertEq(GRANTEE.balance, 0, "Grantee gets nothing in case of error");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
         vm.warp(block.timestamp + (DAYS_TO_MATURE + 1) * 1 days);
         vm.prank(GRANTEE);
         c.release(index);
-        assertEq(GRANTEE.balance, amount, "Grantee gets everything");
+        assertEq(GRANTEE.balance, readAmountFromEscrow(index), "Grantee gets everything");
     }
 
     function testEscrowCanNotBeReleasedTwice() public {
         uint256 index = makeADeposit();
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
         vm.warp(block.timestamp + (DAYS_TO_MATURE + 1) * 1 days);
         vm.prank(GRANTEE);
         c.release(index);
-        assertEq(GRANTEE.balance, amount, "Grantee gets everything");
+        assertEq(GRANTEE.balance, readAmountFromEscrow(index), "Grantee gets everything");
 
         vm.prank(GRANTEE);
         vm.expectRevert();
@@ -103,8 +105,7 @@ contract LumpSumInEthTest is Test {
         c.revoke(index);
         assertEq(GIVER.balance, 100 * TOTAL_AMOUNT - comission, "Revoke before the 1/4 must be complete");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, 0, "Nothing stays on escrow");
+        assertEq(readAmountFromEscrow(index), 0, "Nothing stays on escrow");
     }
 
     function testEscrowCanBeRevokedInHalfBeforeTheSecondQuarter() public {
@@ -117,8 +118,7 @@ contract LumpSumInEthTest is Test {
         c.revoke(index);
         assertEq(GIVER.balance, 99 * TOTAL_AMOUNT  + half, "Revoke before the 2/4 must be halved");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, TOTAL_AMOUNT - comission - half, "The other half stays on escrow");
+        assertEq(readAmountFromEscrow(index), TOTAL_AMOUNT - comission - half, "The other half stays on escrow");
     }
 
     function testEscrowCanBeRevokedInThirdBeforeTheThirdQuarter() public {
@@ -131,8 +131,7 @@ contract LumpSumInEthTest is Test {
         c.revoke(index);
         assertEq(GIVER.balance, 99 * TOTAL_AMOUNT  + third, "Revoke before the 3/4 must be 1/3 of the amount");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, TOTAL_AMOUNT - comission - third, "The other 2/3 stays on escrow");
+        assertEq(readAmountFromEscrow(index), TOTAL_AMOUNT - comission - third, "The other 2/3 stays on escrow");
     }
 
     function testEscrowCanBeRevokedInQuarterBeforeTheFourthQuarter() public {
@@ -145,8 +144,7 @@ contract LumpSumInEthTest is Test {
         c.revoke(index);
         assertEq(GIVER.balance, 99 * TOTAL_AMOUNT  + quarter, "Revoke before the 4/4 must be 1/4 of the amount");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, TOTAL_AMOUNT - comission - quarter, "The other 3/4 stays on escrow");
+        assertEq(readAmountFromEscrow(index), TOTAL_AMOUNT - comission - quarter, "The other 3/4 stays on escrow");
     }
 
     function testEscrowCanNotBeRevokedAnfterMaturingFor30Days() public {
@@ -163,8 +161,7 @@ contract LumpSumInEthTest is Test {
         c.revoke(index);
         assertEq(GIVER.balance, 100 * TOTAL_AMOUNT - comission, "Revoke after maturing + 30 days must be complete");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, 0, "Nothing stays on escrow");
+        assertEq(readAmountFromEscrow(index), 0, "Nothing stays on escrow");
     }
 
     function testEscrowCanNotBeRevokedTwiceBefore() public {
@@ -178,13 +175,12 @@ contract LumpSumInEthTest is Test {
         c.revoke(index);
         assertEq(GIVER.balance, 99 * TOTAL_AMOUNT  + half, "Revoke before the 2/4 must be halved");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, TOTAL_AMOUNT - comission - half, "The other half stays on escrow");
+        assertEq(readAmountFromEscrow(index), TOTAL_AMOUNT - comission - half, "The other half stays on escrow");
 
         vm.prank(GIVER);
         vm.expectRevert();
         c.revoke(index);
-        assertEq(amount, TOTAL_AMOUNT - comission - half, "The other half stays on escrow");
+        assertEq(readAmountFromEscrow(index), TOTAL_AMOUNT - comission - half, "The other half stays on escrow");
     }
 
     function testEscrowCanNotBeRevokedTwiceAfter() public {
@@ -196,13 +192,12 @@ contract LumpSumInEthTest is Test {
         c.revoke(index);
         assertEq(GIVER.balance, 100 * TOTAL_AMOUNT - comission, "Revoke after maturing + 30 days must be complete");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, 0, "Nothing stays on escrow");
+        assertEq(readAmountFromEscrow(index), 0, "Nothing stays on escrow");
 
         vm.prank(GIVER);
         vm.expectRevert();
         c.revoke(index);
-        assertEq(amount, 0, "Nothing stays on escrow");
+        assertEq(readAmountFromEscrow(index), 0, "Nothing stays on escrow");
     }
 
     function testEscrowCanBeRevokedBeforeThenAfter() public {
@@ -215,25 +210,23 @@ contract LumpSumInEthTest is Test {
         c.revoke(index);
         assertEq(GIVER.balance, 99 * TOTAL_AMOUNT  + half, "Revoke before the 2/4 must be halved");
 
-        (,,,,,,uint256 amount,) = c.escrows(index);
-        assertEq(amount, TOTAL_AMOUNT - comission - half, "The other half stays on escrow");
+        assertEq(readAmountFromEscrow(index), TOTAL_AMOUNT - comission - half, "The other half stays on escrow");
 
         vm.prank(GIVER);
         vm.expectRevert();
         c.revoke(index);
-        assertEq(amount, TOTAL_AMOUNT - comission - half, "The other half stays on escrow");
+        assertEq(readAmountFromEscrow(index), TOTAL_AMOUNT - comission - half, "The other half stays on escrow");
 
         vm.prank(GIVER);
         vm.warp(block.timestamp + (DAYS_TO_MATURE + 31) * 1 days);
         c.revoke(index);
         assertEq(GIVER.balance, 100 * TOTAL_AMOUNT - comission, "Revoke after maturing + 30 days must be complete");
 
-        (,,,,,,uint256 amount_after,) = c.escrows(index);
-        assertEq(amount_after, 0, "Nothing stays on escrow");
+        assertEq(readAmountFromEscrow(index), 0, "Nothing stays on escrow");
 
         vm.prank(GIVER);
         vm.expectRevert();
         c.revoke(index);
-        assertEq(amount_after, 0, "Nothing stays on escrow");
+        assertEq(readAmountFromEscrow(index), 0, "Nothing stays on escrow");
     }
 }

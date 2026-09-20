@@ -1,0 +1,91 @@
+import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
+import {StorageSlot} from "@openzeppelin/contracts/utils/StorageSlot.sol";
+
+
+struct EscrowStatus {
+    address grantee;
+    uint48 fundedTimestamp;
+    uint16 daysToMature;
+    bool isReleased;
+    bool isRevokedBeforeMaturing;
+    bool isRevokedAfterMaturing;
+}
+
+library EscrowCollection {
+    uint8 constant ESCROW_SLOT_LENGTH = 3;
+
+        function locateEscrowsFirstSlot(uint256 index) private pure returns (bytes32 slot) {
+        bytes32 arraySlot;
+        assembly ("memory-safe") {
+            arraySlot := escrows.slot
+        }
+        return SlotDerivation.offset(SlotDerivation.deriveArray(arraySlot), index * ESCROW_SLOT_LENGTH);
+    }
+  
+    function getAddressFromPacked(uint256 value) private pure returns(address a) {
+        return address(uint160(value & ((1 << 160) - 1)));
+    }
+
+    function getTimeFromPacked(uint256 value) private pure returns(uint48 t) {
+        return uint48(((value >> 160) & ((1 << 48) - 1)));
+    }
+
+    function getDaysFromPacked(uint256 value) private pure returns(uint16 d) {
+        return uint16((value >> 208) & ((1 << 16) - 1));
+    }
+
+    function getReleasedFromPacked(uint256 value) private pure returns(bool b) {
+        return (value >> 209) & 1 == 1;
+    }
+
+    function getRevokedBeforeFromPacked(uint256 value) private pure returns(bool b) {
+        return(value >> 210) & 1 == 1;
+    }
+
+    function getRevokedAfterFromPacked(uint256 value) private pure returns(bool b) {
+        return (value >> 211) & 1 == 1;
+    }
+
+    function fetchEscrowStatus(uint256 i) private view returns(EscrowStatus memory status) {
+        bytes32 statusSlot = locateEscrowsFirstSlot(i);
+        uint256 statusValues;
+        assembly ("memory-safe") {
+            statusValues := sload(statusSlot)
+        }
+        EscrowStatus memory structured = EscrowStatus({
+            grantee: getAddressFromPacked(statusValues),
+            fundedTimestamp: getTimeFromPacked(statusValues),
+            daysToMature: getDaysFromPacked(statusValues),
+            isReleased: getReleasedFromPacked(statusValues),
+            isRevokedBeforeMaturing: getRevokedBeforeFromPacked(statusValues),
+            isRevokedAfterMaturing: getRevokedAfterFromPacked(statusValues)
+        });
+        return structured;
+    }
+
+    function allocateNextEscrow() private returns (uint256 index, bytes32 firstSlot) {
+        bytes32 arraySlot;
+        assembly ("memory-safe") {
+            arraySlot := escrows.slot
+            index := sload(arraySlot)
+            sstore(arraySlot, add(index, 1))
+        }
+        firstSlot = locateEscrowsFirstSlot(index);
+    }
+
+    function writeTheEscrow(LumpSumEscrow memory escrow, bytes32 slot) private {
+        uint256 value = uint256(uint160(escrow.grantee))
+            | uint256(escrow.fundedTimestamp) << 160
+            | uint256(escrow.daysToMature) << 208;
+        uint256 giver = uint256(uint160(escrow.giver));
+        uint256 amount = escrow.amount;
+
+        assembly ("memory-safe") {
+            sstore(slot, value)
+            slot := add(slot, 1)
+            sstore(slot, giver)
+            slot := add(slot, 1)
+            sstore(slot, amount)
+        }
+    }
+}

@@ -24,6 +24,7 @@ contract LumpSumInERC20 is LumpSum {
     }
 
     function inferFullSum() internal view override returns(uint256 amount){
-        return token.allowance(msg.sender, address(this));
+        // reverting it to 0 makes it very expensive to allocate again
+        return token.allowance(msg.sender, address(this)) - 1;
     }
 }

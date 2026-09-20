@@ -12,21 +12,21 @@ error NotTheGrantee(address you, address grantee);
 error AlreadyRevoked();
 error AlreadyReleased();
 error NewComissionRateIsNotSet();
-error WaitMore(uint256 atLeastTill);
+error WaitMore(uint48 atLeastTill);
 error NoFunds();
 error Unrevokable();
 error NoSuchStage(uint8 stage);
 error DepositingIsDisabled();
 
 struct LumpSumEscrow {
+    address grantee;
+    uint48 fundedTimestamp;
+    uint16 daysToMature;
     bool isReleased;
     bool isRevokedBeforeMaturing;
     bool isRevokedAfterMaturing;
-    uint16 daysToMature;
     address giver;
-    address grantee;
     uint256 amount;
-    uint256 fundedTimestamp;
 }
 
 abstract contract LumpSum is ILumpSum, Ownable {
@@ -35,7 +35,7 @@ abstract contract LumpSum is ILumpSum, Ownable {
     bool public isDisabled = false;
     uint8 public comissionRatePromille = 1;
     uint8 public newComissionRatePromille;
-    uint256 public newCommissionRequestTimestamp = type(uint256).max;
+    uint256 public newCommissionRequestTimestamp;
     LumpSumEscrow[] public escrows;
 
     constructor() Ownable(msg.sender) {
@@ -54,35 +54,37 @@ abstract contract LumpSum is ILumpSum, Ownable {
     function inferFullSum() internal virtual returns(uint256 amount);
 
     function calcMaturityStageUpperBorder(
-        uint256 fundedTimestamp_,
+        uint48 fundedTimestamp_,
         uint16 daysToMature_,
         MaturityStages stage
-    ) public pure returns(uint256 stageBorderTimestamp) {
+    ) public pure returns(uint48 stageBorderTimestamp) {
+        uint48 secondsToMature = uint48(1 days * uint256(daysToMature_));
+
         if (stage == MaturityStages.FirstQuarter) {
-            return fundedTimestamp_ + 1 days * uint256(daysToMature_) / 4;
+            return fundedTimestamp_ + secondsToMature / 4;
         }
 
         if (stage == MaturityStages.SecondQuarter) {
-            return fundedTimestamp_ + 1 days * uint256(daysToMature_) / 2;
+            return fundedTimestamp_ + secondsToMature / 2;
         }
 
         if (stage == MaturityStages.ThirdQuarter) {
-            return fundedTimestamp_ + 1 days * uint256(daysToMature_) * 3 / 4;
+            return fundedTimestamp_ + secondsToMature * 3 / 4;
         }
 
         if (stage == MaturityStages.FourthQuarter) {
-            return fundedTimestamp_ + 1 days * uint256(daysToMature_);
+            return fundedTimestamp_ + secondsToMature;
         }
 
         if (stage == MaturityStages.Matured) {
-            return fundedTimestamp_ + 1 days * uint256(daysToMature_ + CLAIM_PERIOD_IN_DAYS);
+            return fundedTimestamp_ + secondsToMature + uint48(1 days * CLAIM_PERIOD_IN_DAYS);
         }
 
         revert NoSuchStage(uint8(stage));
     }
 
     function lookupMaturityStage(
-        uint256 fundedTimestamp_,
+        uint48 fundedTimestamp_,
         uint16 daysToMature_
     ) public view returns(MaturityStages currentStage) {
         if (block.timestamp < calcMaturityStageUpperBorder(fundedTimestamp_, daysToMature_, MaturityStages.FirstQuarter)) {
@@ -164,14 +166,11 @@ abstract contract LumpSum is ILumpSum, Ownable {
     }
 
     function adoptNewCommissionRate() external onlyOwner() {
-        require(newComissionRatePromille > 0 && newCommissionRequestTimestamp < type(uint256).max, NewComissionRateIsNotSet());
+        require(newComissionRatePromille > 0, NewComissionRateIsNotSet());
 
-        uint256 theEarliest = newCommissionRequestTimestamp + 1 days;
+        uint48 theEarliest = uint48(newCommissionRequestTimestamp + 1 days);
         require(block.timestamp > theEarliest, WaitMore(theEarliest));
         comissionRatePromille = newComissionRatePromille;
-
-        newComissionRatePromille = 0;
-        newCommissionRequestTimestamp = type(uint256).max;
     }
 
     function calcCommission(uint256 amount) public view returns(uint256 comission) {
@@ -198,13 +197,9 @@ abstract contract LumpSum is ILumpSum, Ownable {
         transfer(address(this), msg.sender, amount);
     }
 
-    function makeFullRefund(uint256 i, LumpSumEscrow storage escrow) internal {
-        refund(i, escrow, escrow.amount);
-    }
-
     function refundUnclaimed(uint256 i, LumpSumEscrow storage escrow) internal notRevokedAfterMaturing(escrow) {
         escrow.isRevokedAfterMaturing = true;
-        makeFullRefund(i, escrow);
+        refund(i, escrow, escrow.amount);
     }
 
     function makeTheBeforeRefund(uint256 i, LumpSumEscrow storage escrow, MaturityStages stage) internal notRevokedBeforeMaturing(escrow) {
@@ -229,25 +224,31 @@ abstract contract LumpSum is ILumpSum, Ownable {
     function fundLumpSumGrant(
         address grantee_,
         uint16 daysToMature_
-    ) payable external operational() returns(uint256) {
+    ) payable external operational() returns(uint256 index) {
         require(grantee_ != address(0), ZeroAddress());
 
-        uint256 lumpsum = netOutCommission(inferFullSum());
+        uint256 fullSum = inferFullSum();
+        // must be a mistake
+        // prevent from waisting gas
+        require(fullSum > 0, NoFunds());
+
+        uint256 lumpsum = netOutCommission(fullSum);
         deposit(lumpsum);
         LumpSumEscrow memory escrow = LumpSumEscrow({
+            grantee: grantee_,
+            fundedTimestamp: uint48(block.timestamp),
+            daysToMature: daysToMature_,
             isReleased: false,
             isRevokedBeforeMaturing: false,
             isRevokedAfterMaturing: false,
-            daysToMature: daysToMature_,
             giver: msg.sender,
-            grantee: grantee_,
-            amount: lumpsum,
-            fundedTimestamp: block.timestamp
+            amount: lumpsum
         });
+
         escrows.push(escrow);
-        uint256 i = escrows.length - 1;
-        emit LumpSumDeposited(msg.sender, grantee_, i, lumpsum);
-        return i;
+        index = escrows.length - 1;
+        emit LumpSumDeposited(msg.sender, grantee_, index, lumpsum);
+        return index;
     }
 
     function _revoke(uint256 i, LumpSumEscrow storage escrow) internal
@@ -280,7 +281,6 @@ abstract contract LumpSum is ILumpSum, Ownable {
         notReleased(escrow)
         hasMatured(escrow)
         hasFunds(escrow) {
-        
         release(i, escrow);
     }
 

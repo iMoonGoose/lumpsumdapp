@@ -1,0 +1,89 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity >=0.8.0 <0.9.0;
+
+import "../contracts/LumpSumInEth.sol";
+import { Test } from "forge-std/src/Test.sol";
+import "hardhat/console.sol";
+import {Vm, VmSafe} from "forge-std/Vm.sol";
+
+contract LumpSumInEthTest is Test {
+    address constant GIVER = address(1);
+    address constant GRANTEE = address(2);
+    uint16 constant DAYS_TO_MATURE = 100;
+    uint256 constant TOTAL_AMOUNT = 1000;
+
+    LumpSumInEth c;
+
+    receive() external payable {}
+
+    function setUp() public {
+        c = new LumpSumInEth();
+    }
+
+    function getOpcodeName(uint8 opcode) public pure returns (string memory) {
+        if (opcode == 0x54) return "SLOAD";
+        if (opcode == 0x55) return "SSTORE";
+        if (opcode == 0xF1) return "CALL";
+        if (opcode == 0xF2) return "CALLCODE";
+        if (opcode == 0xF4) return "DELEGATECALL";
+        if (opcode == 0xF5) return "CREATE2";
+        if (opcode == 0xFA) return "STATICCALL";
+        if (opcode == 0xA0) return "LOG0";
+        if (opcode == 0xA1) return "LOG1";
+        if (opcode == 0xA2) return "LOG2";
+        if (opcode == 0xA3) return "LOG3";
+        if (opcode == 0xA4) return "LOG4";
+        return "OTHER";
+    }
+
+    function makeADeposit() public returns (uint256 index){
+        vm.deal(c.owner(), 0);
+        vm.deal(GIVER, TOTAL_AMOUNT * 100);
+        vm.prank(GIVER);
+
+        vm.startDebugTraceRecording();
+
+        index = c.fundLumpSumGrant{value: TOTAL_AMOUNT}(GRANTEE, DAYS_TO_MATURE);
+        vm.prank(GIVER);
+        index = c.fundLumpSumGrant{value: TOTAL_AMOUNT}(GRANTEE, DAYS_TO_MATURE);
+
+        VmSafe.DebugStep[] memory steps = vm.stopAndReturnDebugTraceRecording();
+        uint8 opcode = 0x55;
+        uint8 counter;
+        // 4. Iterate over the steps to extract the opcode sequence
+        for (uint256 i = 0; i < steps.length; i++) {
+            if (steps[i].opcode == opcode) {
+                ++counter;
+            }
+        }
+
+        console.log(getOpcodeName(opcode), counter);
+
+        return index;
+    }
+
+    function readAmountFromEscrow(uint256 index) public view returns (uint256 amount) {
+        (,,,,,,,amount) = c.escrows(index);
+        return amount;
+    }
+
+    // LUMP SUM DEPOSIT
+
+    function testCanDepositFunds() public {
+        uint256 index = makeADeposit();
+        uint256 comission = c.calcCommission(TOTAL_AMOUNT);
+
+        (
+            ,
+            ,
+            ,
+            bool isReleased,
+            bool isRevokedBeforeMaturing,
+            bool isRevokedAfterMaturing,
+            ,
+            uint256 amount
+        ) = c.escrows(index);
+
+
+    }
+}
