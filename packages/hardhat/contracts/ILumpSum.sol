@@ -16,7 +16,6 @@ event LumpSumRevoked(address indexed giver, address indexed grantee, uint256 ind
 
 interface ILumpSum {
     function planNewCommissionRate(uint8 value) external;
-    function adoptNewCommissionRate() external;
     function fundLumpSumGrant(
         address grantee_,
         uint16 daysToMature_

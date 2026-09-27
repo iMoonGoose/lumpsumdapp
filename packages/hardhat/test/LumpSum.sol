@@ -97,12 +97,12 @@ contract LumpSumTest is Test {
     // COMISSION MANAGEMENT
 
     function testComissionRatePromilleGetter() public view {
-        assertEq(c.comissionRatePromille(), 1, "Commission promille is not OK");
+        assertEq(c.commissionRatePromille(), 1, "Commission promille is not OK");
     }
 
     function testCommisionChangeIsForTheOwnerOnly() public {
         // works
-        uint8 startCommisionRate = c.comissionRatePromille();
+        uint8 startCommisionRate = c.commissionRatePromille();
         c.planNewCommissionRate(startCommisionRate);
         //fails
         vm.prank(address(1));
@@ -110,37 +110,41 @@ contract LumpSumTest is Test {
         c.planNewCommissionRate(startCommisionRate);
     }
 
-    function testFirstChangeComissionThenAdopt() public {
-        //fails
-        vm.expectRevert();
-        c.adoptNewCommissionRate();
-    }
-
     function testCanChangeComissionOnlyAfterWaitingADay() public {
-        uint8 newCommisionRate = c.comissionRatePromille() + 66;
+        uint8 newCommisionRate = c.commissionRatePromille() + 66;
         //fails
         c.planNewCommissionRate(newCommisionRate);
-        vm.expectRevert();
-        c.adoptNewCommissionRate();
-         assertEq(c.comissionRatePromille(), newCommisionRate - 66, "Current commission promille must not change");
-    }
-
-    function testPlannedComissionDoesNotChangeTheCurrentOne() public {
-        uint8 startCommisionRate = c.comissionRatePromille();
-        uint8 newCommisionRate = c.newComissionRatePromille() + 23;
-
-        assertEq(c.newComissionRatePromille(), 0, "New commmision promille starts at 0");
-        c.planNewCommissionRate(newCommisionRate);
-        assertEq(c.newComissionRatePromille(), newCommisionRate, "Requested commision promille must change");
-        assertEq(c.comissionRatePromille(), startCommisionRate, "Current commission promille must not change");
+        assertEq(c.newCommissionTimestamp(), uint48(block.timestamp) + 1 days, "Change is on the next day");
+        assertEq(c.newCommissionRatePromille(), newCommisionRate, "New commission rate is stored");
+        assertEq(c.commissionRatePromille(), newCommisionRate - 66, "Current commission promille must not change");
     }
 
     function testAdoptingNewComissionRate() public {
-        uint8 newCommisionRate = c.comissionRatePromille() + 42;
+        uint8 newCommisionRate = c.commissionRatePromille() + 42;
         c.planNewCommissionRate(newCommisionRate);
         vm.warp(block.timestamp + 2 days);
-        c.adoptNewCommissionRate();
-        assertEq(c.comissionRatePromille(), newCommisionRate, "New value must be set");
+        assertEq(c.commissionRatePromille(), newCommisionRate, "New value must be set");
+    }
+
+    function testMultipleChangesToCommisionRate() public {
+        uint8 startCommisionRate = c.commissionRatePromille();
+        uint8 newCommisionRate = c.newCommissionRatePromille() + 23;
+        uint8 newCommisionRate2 = c.newCommissionRatePromille() + 48;
+
+        assertEq(c.newCommissionRatePromille(), 1, "New commmision promille starts at 1");
+        c.planNewCommissionRate(newCommisionRate);
+        uint48 firstTimestamp = c.newCommissionTimestamp();
+        vm.warp(block.timestamp + 15);
+        assertEq(c.newCommissionRatePromille(), newCommisionRate, "Requested commision promille must change");
+        assertEq(c.commissionRatePromille(), startCommisionRate, "Current commission promille must not change");
+        c.planNewCommissionRate(newCommisionRate2);
+        vm.warp(block.timestamp + 25);
+        uint48 secondTimestamp = c.newCommissionTimestamp();
+        assertGt(secondTimestamp, firstTimestamp, "Timestamp must be updated");
+        assertEq(c.newCommissionRatePromille(), newCommisionRate2, "Requested commision promille must change");
+        assertEq(c.commissionRatePromille(), startCommisionRate, "Current commission promille must not change");
+        vm.warp(block.timestamp + 2 days);
+        assertEq(c.commissionRatePromille(), newCommisionRate2, "New commision rate must be adopted");
     }
 
     // COMMISION CALCULATION
@@ -148,7 +152,6 @@ contract LumpSumTest is Test {
     function quicklySetNewRate(uint8 rate) private {
         c.planNewCommissionRate(rate);
         vm.warp(block.timestamp + 2 days);
-        c.adoptNewCommissionRate();
     }
 
     function testCalcCommission() public {

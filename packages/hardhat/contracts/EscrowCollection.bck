@@ -14,7 +14,7 @@ struct EscrowStatus {
 library EscrowCollection {
     uint8 constant ESCROW_SLOT_LENGTH = 3;
 
-        function locateEscrowsFirstSlot(uint256 index) private pure returns (bytes32 slot) {
+    function locateEscrowsFirstSlot(uint256 index) private pure returns (bytes32 slot) {
         bytes32 arraySlot;
         assembly ("memory-safe") {
             arraySlot := escrows.slot

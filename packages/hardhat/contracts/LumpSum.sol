@@ -30,12 +30,13 @@ struct LumpSumEscrow {
 }
 
 abstract contract LumpSum is ILumpSum, Ownable {
-    uint8 constant CLAIM_PERIOD_IN_DAYS = 30;
+    uint8 constant public CLAIM_PERIOD_IN_DAYS = 30;
+
+    // address onwer; from Ownable. 160 bits
+    // layout: 48 bits timestamp + 8 bits new rate + 8 bits current rate
+    uint64 commissionData = 0x0101;
 
     bool public isDisabled = false;
-    uint8 public comissionRatePromille = 1;
-    uint8 public newComissionRatePromille;
-    uint256 public newCommissionRequestTimestamp;
     LumpSumEscrow[] public escrows;
 
     constructor() Ownable(msg.sender) {
@@ -159,22 +160,65 @@ abstract contract LumpSum is ILumpSum, Ownable {
     }
 
     // COMMISSION MANAGEMENT
+    function commissionRatePromille() public view returns (uint8 rate) {
+      uint256 data;
+      uint256 dt;
+      assembly ("memory-safe") {
+          let dataSlot := commissionData.slot
+          data := sload(dataSlot)
+      }
 
-    function planNewCommissionRate(uint8 value) external onlyOwner() {
-        newComissionRatePromille = value;
-        newCommissionRequestTimestamp = block.timestamp;
+      dt = (data & ((1 << (64 + 160)) - 1)) >> (16 + 160);
+      if (block.timestamp > dt) {
+        return uint8((data & ((1 << (16 + 160)) - 1)) >> (8 + 160));
+      } else {
+        return uint8((data & ((1 << (8 + 160)) - 1)) >> 160);
+      }
     }
 
-    function adoptNewCommissionRate() external onlyOwner() {
-        require(newComissionRatePromille > 0, NewComissionRateIsNotSet());
+    function newCommissionRatePromille() public view returns (uint8 rate) {
+      uint256 data;
+      assembly ("memory-safe") {
+          let dataSlot := commissionData.slot
+          data := sload(dataSlot)
+      }
+      rate = uint8((data & ((1 << (16 + 160)) - 1)) >> (8 + 160));
+    }
 
-        uint48 theEarliest = uint48(newCommissionRequestTimestamp + 1 days);
-        require(block.timestamp > theEarliest, WaitMore(theEarliest));
-        comissionRatePromille = newComissionRatePromille;
+    function newCommissionTimestamp() public view returns (uint48 dt) {
+      uint256 data;
+      assembly ("memory-safe") {
+          let dataSlot := commissionData.slot
+          data := sload(dataSlot)
+      }
+      dt = uint48((data & ((1 << (64 + 160)) - 1)) >> (16 + 160));
+    }
+
+    function planNewCommissionRate(uint8 value) external onlyOwner() {
+        uint256 dataSlot;
+        uint256 data;
+        assembly ("memory-safe") {
+            dataSlot := commissionData.slot
+            data := sload(dataSlot)
+        }
+        uint48 old_dt = uint48((data & ((1 << (64 + 160)) - 1)) >> (16 + 160));
+        uint48 new_dt = uint48(block.timestamp + 1 days);
+        uint8 old_rate = uint8((data & ((1 << (8 + 160)) - 1)) >> 160);
+        uint8 new_rate = uint8((data & ((1 << (16 + 160)) - 1)) >> (8 + 160));
+
+        if (block.timestamp > old_dt) {
+          old_rate = new_rate;
+        }
+
+        data = data & ~uint256(((1 << (64 + 160)) -1 ) ^ ((1 << 160) - 1)); // flushing  bits
+        data = data | (uint256(new_dt) << (16 + 160)) | (uint256(value) << (8 + 160)) | (uint256(old_rate) << 160);
+        assembly ("memory-safe") {
+            sstore(dataSlot, data)
+        }
     }
 
     function calcCommission(uint256 amount) public view returns(uint256 comission) {
-        return amount * comissionRatePromille / 1000;
+        return amount * commissionRatePromille() / 1000;
     }
 
     function netOutCommission(uint256 full_sum) internal returns(uint256 lumpsum) {

@@ -1,98 +1,98 @@
 "use client";
 
-import React, { useRef } from "react";
-import Image from "next/image";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { useRef } from "react";
 import { hardhat } from "viem/chains";
-import { Bars3Icon, BugAntIcon } from "@heroicons/react/24/outline";
+import { ArrowPathIcon } from "@heroicons/react/24/outline";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
+import { useAppState } from "~~/hooks/appContext";
+import { useCommissionRate } from "~~/hooks/lumpsumContract/lumpsumCommon";
+import { InlineDropdown } from "./smallerComponents/InlineDropdows";
+import { useContractInstanceState } from "~~/hooks/contractInstanceContext";
 
-type HeaderMenuLink = {
-  label: string;
-  href: string;
-  icon?: React.ReactNode;
-};
-
-export const menuLinks: HeaderMenuLink[] = [
-  {
-    label: "Home",
-    href: "/",
-  },
-  {
-    label: "Debug Contracts",
-    href: "/debug",
-    icon: <BugAntIcon className="h-4 w-4" />,
-  },
-];
-
-export const HeaderMenuLinks = () => {
-  const pathname = usePathname();
-
-  return (
-    <>
-      {menuLinks.map(({ label, href, icon }) => {
-        const isActive = pathname === href;
-        return (
-          <li key={href} className="h-full">
-            <Link
-              href={href}
-              passHref
-              className={`${
-                isActive ? "bg-base-300" : ""
-              } hover:bg-base-300 focus:!bg-base-300 h-full px-4 text-sm gap-2 flex items-center whitespace-nowrap`}
-            >
-              {icon}
-              <span>{label}</span>
-            </Link>
-          </li>
-        );
-      })}
-    </>
-  );
-};
-
-/**
- * Site header
- */
 export const Header = () => {
   const { targetNetwork } = useTargetNetwork();
+  const {
+    isLoading,
+    setLoading,
+    loadEscrows,
+  } = useAppState();
+  const {
+    contractType,
+    availableContractTypes,
+    availableNetworks,
+    changeContractType,
+    changeOperationalNetwork,
+  } = useContractInstanceState();
+  
+  const { refetch: refetchCommission } = useCommissionRate();
   const isLocalNetwork = targetNetwork.id === hardhat.id;
 
   const burgerMenuRef = useRef<HTMLDetailsElement>(null);
   useOutsideClick(burgerMenuRef, () => {
     burgerMenuRef?.current?.removeAttribute("open");
   });
+  
+  const refresh = async () => {
+    try {
+      setLoading(true);
+
+      await loadEscrows();
+      await refetchCommission();
+
+      setLoading(false);
+    } catch (error) {
+      setLoading(false);
+    }
+  };
+
+  const refreshButton = (
+    <button className="btn btn-secondary btn-sm pl-1 pr-1" onClick={refresh} disabled={isLoading}>
+      {!isLoading ? (
+        <ArrowPathIcon className="h-5 w-5" />
+      ) : (
+        <span className="loading loading-spinner loading-sm"></span>
+      )}
+    </button>
+  );
+
+  const contractTypeDropDown = (
+    <InlineDropdown
+      label={contractType}
+      options={
+        availableContractTypes.map((t) => {
+          return {
+            value: t,
+            label: t,
+            onSelect: () => {changeContractType(t);}
+          };
+        })
+      }
+    />
+  );
+
+  const networkDropDown = (
+    <InlineDropdown
+      label={targetNetwork.name.toLowerCase()}
+      options={
+        availableNetworks.map((n) => {
+          return {
+            value: n,
+            label: n.toLowerCase(),
+            onSelect: () => {changeOperationalNetwork(n);}
+          };
+        })
+      }
+    />
+  );
 
   return (
-    <div className="sticky lg:static top-0 navbar bg-base-100 min-h-16 shrink-0 justify-between z-20 border-b-2 border-base-300 p-0 sm:px-2">
+    <div className="flex-wrap sticky lg:static top-0 navbar bg-base-100 min-h-16 shrink-0 justify-between z-20 border-b-2 border-base-300 p-0 sm:px-2">
       <div className="navbar-start w-auto self-stretch">
-        <details className="dropdown" ref={burgerMenuRef}>
-          <summary className="ml-1 btn btn-ghost lg:hidden hover:bg-transparent">
-            <Bars3Icon className="h-1/2" />
-          </summary>
-          <ul
-            className="menu menu-compact dropdown-content mt-3 p-2 shadow-lg bg-base-100 w-52"
-            onClick={() => {
-              burgerMenuRef?.current?.removeAttribute("open");
-            }}
-          >
-            <HeaderMenuLinks />
-          </ul>
-        </details>
-        <Link href="/" passHref className="hidden lg:flex items-center gap-2 ml-4 mr-6 shrink-0">
-          <div className="flex relative w-10 h-10">
-            <Image alt="SE2 logo" className="cursor-pointer" fill src="/logo.svg" />
-          </div>
-          <div className="flex flex-col">
-            <span className="font-bold leading-tight">Scaffold-ETH</span>
-            <span className="text-xs">Ethereum dev stack</span>
-          </div>
-        </Link>
-        <ul className="hidden lg:flex lg:flex-nowrap h-full m-0 p-0 list-none">
-          <HeaderMenuLinks />
-        </ul>
+        <div className='flex flex-row gap-2 items-center p-2'>
+          { refreshButton }
+          <span>dapp:\lumpsum\{contractTypeDropDown}\{networkDropDown}</span>
+        </div>
       </div>
       <div className="navbar-end grow mr-4">
         <RainbowKitCustomConnectButton />
