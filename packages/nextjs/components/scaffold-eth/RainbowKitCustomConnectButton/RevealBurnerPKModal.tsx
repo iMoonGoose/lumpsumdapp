@@ -1,3 +1,5 @@
+"use client";
+
 import { useRef } from "react";
 import { rainbowkitBurnerWallet } from "burner-connector";
 import { ShieldExclamationIcon } from "@heroicons/react/24/outline";

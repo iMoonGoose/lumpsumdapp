@@ -1,6 +1,7 @@
 // nextjs-frontend/src/app/page.tsx
 'use client';
 
+import '~~/locales/i18n';
 import {
   useAccount,
 } from 'wagmi';
@@ -12,8 +13,13 @@ import { FundNewLumpSum } from '~~/components/FundNewLumpSum';
 import { PromisedToMe } from '~~/components/PromisedToMe';
 import QA from '~~/components/QA';
 import { useAppState } from '~~/hooks/appContext';
+import { LocalhostOptions } from '~~/components/LocalHostOptions';
+import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export default function Home() {
+  const { t } = useTranslation();
+  
   const {
     errorFetchingEscrows,
     errorFetchingReleaseWindow,
@@ -22,7 +28,17 @@ export default function Home() {
     owner,
   } = useAppState();
   const { isConnected, address } = useAccount();
-  
+  const [isLocalhost, setIsLocalhost] = useState(false);
+
+  useEffect(() => {
+    const hostname = window.location.hostname
+    setIsLocalhost(
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '[::1]'
+    )
+  }, []);
+
   return (
     <main style={{ padding: '0.2rem', fontFamily: 'sans-serif' }}>
       {
@@ -37,7 +53,7 @@ export default function Home() {
         : (
           <>
             <Collapsible
-              title={`Promise Lump Sum`}
+              title={t(`Promise Lump Sum`)}
               defaultOpen={true}
             >
               <div>
@@ -46,7 +62,7 @@ export default function Home() {
             </Collapsible>
 
             <Collapsible
-              title={`You funded ${escrowsFunded.length}`}
+              title={t(`You funded`, {count: escrowsFunded.length})}
               disabled={escrowsFunded.length === 0}
             >
               <div>
@@ -55,7 +71,7 @@ export default function Home() {
             </Collapsible>
 
             <Collapsible
-              title={`Promised to you ${escrowsPromised.length}`}
+              title={t(`Promised to you`, { count: escrowsPromised.length })}
               disabled={escrowsPromised.length === 0}
             >
               <div>
@@ -66,7 +82,7 @@ export default function Home() {
         )
       }
       <Collapsible
-        title={`QA`}
+        title={t(`QA`)}
         defaultOpen={!isConnected}
       >
         <div>
@@ -76,11 +92,21 @@ export default function Home() {
       {
         (owner?.toLowerCase() === address?.toLowerCase() && typeof owner === 'string')
         && <Collapsible
-          title={`Commission management`}
+          title={t(`Commission management`)}
           defaultOpen={false}
         >
           <div>
             <CommissionManager />
+          </div>
+        </Collapsible>
+      }
+      {
+        isLocalhost && <Collapsible
+          title={t(`Localhost Options`)}
+          defaultOpen={false}
+        >
+          <div>
+            <LocalhostOptions />
           </div>
         </Collapsible>
       }

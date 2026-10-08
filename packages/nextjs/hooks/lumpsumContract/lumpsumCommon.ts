@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Address,
@@ -14,7 +13,9 @@ import { useAccount, useWatchContractEvent, useWriteContract } from 'wagmi';
 import { AddressType } from '~~/types/abitype/abi';
 import { LumpSumEscrow } from '~~/types/contractStructs';
 import { lumpsuminethAbi } from '~~/contractsData/lumpsumineth';
+import { lumpsuminerc20Abi } from '~~/contractsData/lumpsuminerc20';
 import { useContractInstanceState } from '../contractInstanceContext';
+import { ContractTypes } from '~~/types/nets';
 
 export function useContractEvent(
   callbackGiver: (i: bigint) => Promise<void>,
@@ -166,6 +167,7 @@ export function useFundHook() {
   const {
     contractAddress: lumpsumAddress,
     contractAbi: lumpsumAbi,
+    contractType
   } = useContractInstanceState();
 
   const [loading, setLoading] = useState(false);
@@ -192,7 +194,7 @@ export function useFundHook() {
       setLoading(true);
       await writeContractAsync({
         address: lumpsumAddress,
-        value: parseEther(sendValue as `${number}`),
+        value: contractType === ContractTypes.ETH ? parseEther(sendValue as `${number}`) : 0n,
         abi: lumpsumAbi,
         functionName: 'fundLumpSumGrant',
         args: [checkSumAddress, Math.floor(Number(daysToMature))],
@@ -385,8 +387,62 @@ export function useOwner() {
   return { owner, error };
 }
 
+export function useERC20Address() {
+  const { isConnected, chain } = useAccount();
+  const {
+    contractAddress: lumpsumAddress,
+    contractAbi: lumpsumAbi,
+    contractType,
+  } = useContractInstanceState();
+  const [addressERC20, setAddressERC20] = useState<Address | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+
+  const readAddress = async (): Promise<Address | null> => {
+    setError(null);
+
+    if ( ![ContractTypes.USDT, ContractTypes.USDC].includes(contractType)
+      || !isConnected || !chain
+      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
+      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null) {
+      return null;
+    }
+
+    const publicClient = createPublicClient({
+      chain,
+      transport: http(),
+    });
+    
+    const adressNumber = await publicClient.readContract({
+      abi: lumpsumAbi as typeof lumpsuminerc20Abi,
+      address: lumpsumAddress,
+      functionName: 'token',
+    })
+    return getAddress(adressNumber);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const value = await readAddress();
+        if (!cancelled) setAddressERC20(value);
+      } catch (e) {
+        if (!cancelled) setError(e as Error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isConnected, chain?.id, contractType]);
+
+  return { addressERC20, error };
+}
+
 export function useCommissionRate() {
   const { isConnected, chain } = useAccount();
+  const { globalRefresh } = useContractInstanceState();
 
   const {
     contractAddress: lumpsumAddress,
@@ -446,12 +502,13 @@ export function useCommissionRate() {
     return () => {
       cancelled = true;
     };
-  }, [readCommisionRate, chainId, lumpsumAddress, contractType]);
+  }, [readCommisionRate, chainId, lumpsumAddress, contractType, globalRefresh]);
 
   return { rate, error, refetch };
 }
 
 export function useFutureCommissionRate() {
+  const { globalRefresh } = useContractInstanceState();
   const { isConnected, chain } = useAccount();
   const [rate, setRate] = useState(0);
   const [error, setError] = useState<Error | null>(null);
@@ -511,12 +568,13 @@ export function useFutureCommissionRate() {
     return () => {
       cancelled = true;
     };
-  }, [readCommisionRate, chainId, lumpsumAddress, contractType]);
+  }, [readCommisionRate, chainId, lumpsumAddress, contractType, globalRefresh]);
 
   return { rate, error, refetch };
 }
 
 export function useNewCommissionTimespamp() {
+  const { globalRefresh } = useContractInstanceState();
   const { isConnected, chain } = useAccount();
 
   const {
@@ -578,7 +636,7 @@ export function useNewCommissionTimespamp() {
     return () => {
       cancelled = true;
     };
-  }, [readCommisionTimespamp, chainId, lumpsumAddress, contractType]);
+  }, [readCommisionTimespamp, chainId, lumpsumAddress, contractType, globalRefresh]);
 
   return { dt, error, refetch };
 }

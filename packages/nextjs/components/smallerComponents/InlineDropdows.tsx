@@ -1,15 +1,17 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
+import { Tip } from './Tip'
 
 export type DropdownOption<T extends string = string> = {
   value: T
-  label: string
+  label: any
   onSelect?: () => void
+  tipText?:string
 }
 
 type Props<T extends string = string> = {
-  label: string
+  label: any
   options: DropdownOption<T>[]
   onSelect?: (value: T) => void
   className?: string
@@ -48,14 +50,14 @@ export function InlineDropdown<T extends string = string>({
     <span ref={ref} className={`relative inline-block ${className ?? ''}`}>
       <button
         type="button"
-        className="inline-flex items-center gap-1 underline decoration-dotted underline-offset-2 hover:opacity-80 cursor-pointer"
+        className="inline-flex items-center gap-1 hover:opacity-80 cursor-pointer"
         style={{ anchorName } as React.CSSProperties}
         onClick={() => setOpen(v => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        {label}
-        <span aria-hidden className={`text-[0.7em] transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
+        <span className=' underline decoration-dotted underline-offset-2 '>{label}</span> 
+        <span aria-hidden className={`transition-transform ${open ? 'rotate-180' : ''}`}>▾</span>
       </button>
 
       {open && (
@@ -70,10 +72,11 @@ export function InlineDropdown<T extends string = string>({
           } as React.CSSProperties}
         >
           {options.map(opt => (
-            <li key={opt.value}>
-              <button type="button" onClick={() => choose(opt)} className="w-full text-left">
+            <li key={opt.value} className="flex flex-row flex-nowrap items-center">
+              <button type="button" onClick={() => choose(opt)} className={(opt.tipText ? 'w-8/10' : 'w-full' ) + " text-left"}>
                 {opt.label}
               </button>
+              { opt.tipText && <Tip className='tooltip-right w-2/10' text={opt.tipText} /> }
             </li>
           ))}
         </ul>

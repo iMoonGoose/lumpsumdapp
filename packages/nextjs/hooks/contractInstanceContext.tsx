@@ -1,11 +1,11 @@
 "use client";
 
 import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useAccount, useSwitchChain } from 'wagmi';
+import { useAccount, useCall, useSwitchChain } from 'wagmi';
 import { Abi, Address, Chain } from 'viem';
 import { useTargetNetwork } from './scaffold-eth';
 import { ContractTypes } from '~~/types/nets';
-import { availableContractTypes, chainIdFromName, CONTRACT_TYPES_TO_NETWORKS_ADDRESSES } from '~~/utils/nets';
+import { availableContractTypes, chainIdFromName, CONTRACT_TYPES_TO_NETWORKS_ADDRESSES, getAbiForType } from '~~/utils/nets';
 
 interface ContractInstanceContext {
   contractType: ContractTypes;
@@ -15,13 +15,20 @@ interface ContractInstanceContext {
   changeOperationalNetwork: (c: Chain['name']) => void;
   contractAddress: Address | null | undefined;
   contractAbi: Abi | null | undefined;
+  globalRefresh: number;
+  triggerGlobalRefresh: () => void;
 }
 const ContractInstanceStateContext = createContext<ContractInstanceContext | undefined>(undefined);
 
 export function ContractInstanceProvider({ children } : {children: ReactNode}) {
+  const [globalRefresh, setGlobalRefresh] = useState(0);
   const { isConnected, address } = useAccount();
   const [ contractType, setContractType ] = useState(ContractTypes.ETH);
   const [ availableNetworks, setAvailableNetworks ] = useState<Array<Chain['name']>>([]);
+
+  const triggerGlobalRefresh = useCallback(() => {
+    setGlobalRefresh(Date.now());
+  }, [setGlobalRefresh]);
 
   useEffect(
     () => {
@@ -32,10 +39,10 @@ export function ContractInstanceProvider({ children } : {children: ReactNode}) {
         }
       }
       setAvailableNetworks(res);
-  }, [isConnected, contractType]);
+  }, [isConnected, contractType, globalRefresh]);
   const { targetNetwork } = useTargetNetwork();
   const [ contractAddress, setContractAddress ] = useState(CONTRACT_TYPES_TO_NETWORKS_ADDRESSES[targetNetwork.name][ContractTypes.ETH]?.address);
-  const [ contractAbi, setContractAbi ] = useState(CONTRACT_TYPES_TO_NETWORKS_ADDRESSES[targetNetwork.name][ContractTypes.ETH]?.abi);
+  const [ contractAbi, setContractAbi ] = useState(getAbiForType(ContractTypes.ETH));
   
   const changeContractType = useCallback((c: ContractTypes) => {
     setContractType(c);
@@ -44,8 +51,8 @@ export function ContractInstanceProvider({ children } : {children: ReactNode}) {
       throw new Error(`Can't find contract ${contractType} for the chain named "${c}"`);
     }
     setContractAddress(contractInfo.address);
-    setContractAbi(contractInfo.abi);
-  }, [targetNetwork]);
+    setContractAbi(getAbiForType(contractType));
+  }, [targetNetwork, globalRefresh]);
 
   const { switchChain, isPending } = useSwitchChain()
   const changeOperationalNetwork = useCallback((chainname: Chain['name']) => {
@@ -59,9 +66,9 @@ export function ContractInstanceProvider({ children } : {children: ReactNode}) {
       throw new Error(`Can't find contract ${contractType} for the chain named "${chainname}"`);
     }
     setContractAddress(contractInfo.address);
-    setContractAbi(contractInfo.abi);
+    setContractAbi(getAbiForType(contractType));
       throw new Error(`Can't find contract ${contractType} for the chain named "${chainname}"`);
-  }, [contractType]);  
+  }, [contractType, globalRefresh]);  
   
   return (
     <ContractInstanceStateContext value={{
@@ -72,6 +79,8 @@ export function ContractInstanceProvider({ children } : {children: ReactNode}) {
       changeOperationalNetwork,
       contractAddress,
       contractAbi,
+      globalRefresh,
+      triggerGlobalRefresh,
     }}>
       {children}
     </ContractInstanceStateContext>

@@ -1,10 +1,13 @@
 "use client";
 
 import { Address } from "@scaffold-ui/components";
-import { formatAmount, formatTimestamp, hasItPassed } from "~~/utils/formatting";
+import { prettifyCoinAmount } from "~~/utils/formatting";
 import { useReleaseHook } from "~~/hooks/lumpsumContract/lumpsumCommon";
 import {LumpSumEscrow} from '~~/types/contractStructs'
 import { DaisyErrorAlert } from "./ErrorDisplay";
+import { useContractInstanceState } from "~~/hooks/contractInstanceContext";
+import { useTranslation } from "react-i18next";
+import { useAppState } from "~~/hooks/appContext";
 
 
 type Props = {
@@ -13,7 +16,11 @@ type Props = {
 }
 
 export const PromisedEscrowList = ({ escrows, releaseWindowDuration }: Props) => {
+  const { t } = useTranslation();
+  
   const { release, isError, error } = useReleaseHook();
+  const { contractType } = useContractInstanceState();
+  const { formatTimestamp, hasItPassed } = useAppState();
 
   const tdClass = "max-md:flex max-md:justify-between max-md:border-0 max-md:before:content-[attr(data-label)] max-md:before:font-semibold";
 
@@ -22,14 +29,14 @@ export const PromisedEscrowList = ({ escrows, releaseWindowDuration }: Props) =>
         <thead className="max-md:hidden">
           <tr>
             <th>#</th>
-            <th>Giver</th>
-            <th>Grantee</th>
-            <th>Amount</th>
-            <th>Funded At</th>
-            <th>Mature At</th>
-            <th>Released</th>
-            <th>Revoked (Before)</th>
-            <th>Revoked (After)</th>
+            <th>{t('Giver')}</th>
+            <th>{t('Grantee')}</th>
+            <th>{t('Amount')}</th>
+            <th>{t('Funded At')}</th>
+            <th>{t('Mature At')}</th>
+            <th>{t('Released')}</th>
+            <th>{t('Revoked (Before)')}</th>
+            <th>{t('Revoked (After)')}</th>
           </tr>
         </thead>
         <tbody>
@@ -43,52 +50,52 @@ export const PromisedEscrowList = ({ escrows, releaseWindowDuration }: Props) =>
               </th>
 
               <td
-                data-label="Giver"
+                data-label={t('Giver')}
                 className={tdClass}
               >
                 <Address address={escrow.giver} onlyEnsOrAddress size="sm" />
               </td>
 
               <td
-                data-label="Grantee"
+                data-label={t('Grantee')}
                 className={tdClass}
               >
-                <span>me</span>
+                <span>{t('me')}</span>
               </td>
 
               <td
-                data-label="Amount"
+                data-label={t('Amount')}
                 className={tdClass}
               >
-                {formatAmount(escrow.amount)}
+                {prettifyCoinAmount(escrow.amount, contractType, true)}
               </td>
 
               <td
-                data-label="Funded At"
+                data-label={t('Funded At')}
                 className={tdClass}
               >
                 {formatTimestamp(escrow.fundedTimestamp)}</td>
 
               <td
-                data-label="Mature At"
+                data-label={t('Mature At')}
                 className={tdClass}
               >
                 {formatTimestamp(escrow.fundedTimestamp, escrow.daysToMature)}</td>
 
               <td
-                data-label="Released"
+                data-label={t('Released')}
                 className={tdClass}
               >
                 {
                   escrow.isReleased
-                    ? <span>Yes</span>
+                    ? <span>{t('Yes')}</span>
                     : escrow.isRevokedAfterMaturing
-                      ? <span>Revoked after</span>
+                      ? <span>{t("Revoked (After)")}</span>
                       : Number(escrow.amount) === 0
-                        ? <span>No funds</span>
+                        ? <span>{t('No funds')}</span>
                         : !hasItPassed(escrow.fundedTimestamp, escrow.daysToMature)
-                          ? <span>Unlocks {formatTimestamp(escrow.fundedTimestamp, escrow.daysToMature)}</span>
-                          : <button className="h-10 btn btn-primary btn-sm px-2" onClick={async () => await release(escrow.index)}>Claim until {formatTimestamp(escrow.fundedTimestamp, escrow.daysToMature + releaseWindowDuration)}</button>
+                          ? <span>{t('Unlocks')} {formatTimestamp(escrow.fundedTimestamp, escrow.daysToMature)}</span>
+                          : <button className="h-10 btn btn-primary btn-sm px-2" onClick={async () => await release(escrow.index)}>{t('Claim until')} {formatTimestamp(escrow.fundedTimestamp, escrow.daysToMature + releaseWindowDuration)}</button>
                 }
               </td>
 
@@ -98,16 +105,16 @@ export const PromisedEscrowList = ({ escrows, releaseWindowDuration }: Props) =>
               >
                 {
                   escrow.isRevokedBeforeMaturing
-                    ? <span>Yes</span>
+                    ? <span>{t('Yes')}</span>
                     : escrow.isReleased
-                      ? <span>Released</span>
+                      ? <span>{t('Released')}</span>
                       : escrow.isRevokedAfterMaturing
-                        ? <span>Revoked after</span>
+                        ? <span>{t("Revoked (After)")}</span>
                         : Number(escrow.amount) === 0
-                        ? <span>No funds</span>
+                        ? <span>{t('No funds')}</span>
                           : hasItPassed(escrow.fundedTimestamp, escrow.daysToMature)
-                            ? <span>Locked {formatTimestamp(escrow.fundedTimestamp, escrow.daysToMature)}</span>
-                            : <span>Revokable</span>
+                            ? <span>{t('Locked')} {formatTimestamp(escrow.fundedTimestamp, escrow.daysToMature)}</span>
+                            : <span>{t('Revokable')}</span>
                 }
               </td>
 
@@ -117,16 +124,16 @@ export const PromisedEscrowList = ({ escrows, releaseWindowDuration }: Props) =>
               >
                 {
                   escrow.isRevokedAfterMaturing
-                  ? <span>Yes</span>
+                  ? <span>{t('Yes')}</span>
                   : escrow.isReleased
-                    ? <span>Released</span>
+                    ? <span>{t('Released')}</span>
                     : escrow.isRevokedBeforeMaturing
-                      ? <span>Revoked before</span>
+                      ? <span>{t('Revoked (Before)')}</span>
                       : Number(escrow.amount) === 0
-                        ? <span>No funds</span>
+                        ? <span>{t('No funds')}</span>
                         : !hasItPassed(escrow.fundedTimestamp, escrow.daysToMature + releaseWindowDuration)
-                          ? <span>Since {formatTimestamp(escrow.fundedTimestamp, escrow.daysToMature + releaseWindowDuration)}</span>
-                          : <span>Revokable</span>
+                          ? <span>{t('Since')} {formatTimestamp(escrow.fundedTimestamp, escrow.daysToMature + releaseWindowDuration)}</span>
+                          : <span>{t('Revokable')}</span>
                 }
               </td>
             </tr>

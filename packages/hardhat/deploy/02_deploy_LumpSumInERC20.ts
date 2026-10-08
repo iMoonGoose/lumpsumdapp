@@ -16,7 +16,7 @@ async function main(): Promise<void> {
 
   // 2. Deploy your contract (Replace "YourContract" with your actual contract name)
   const contractName = "LumpSumInERC20";
-  const MainnetUSTDT = "0xdac17f958d2ee523a2206206994597c13d831ec7" as Address;
+  const MainnetUSTDT = "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512" as Address;
 
   const contract = await viem.deployContract(contractName, [MainnetUSTDT]);
   

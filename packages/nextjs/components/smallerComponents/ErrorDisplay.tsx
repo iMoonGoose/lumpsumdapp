@@ -1,3 +1,5 @@
+"use client";
+
 import { getParsedError } from "~~/utils/scaffold-eth";
 
 type DaisyErrorAlertProps = {

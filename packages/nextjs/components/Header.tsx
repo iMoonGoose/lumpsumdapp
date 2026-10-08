@@ -6,16 +6,18 @@ import { ArrowPathIcon } from "@heroicons/react/24/outline";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
 import { useAppState } from "~~/hooks/appContext";
-import { useCommissionRate } from "~~/hooks/lumpsumContract/lumpsumCommon";
 import { InlineDropdown } from "./smallerComponents/InlineDropdows";
 import { useContractInstanceState } from "~~/hooks/contractInstanceContext";
+import { LanguageDropdown } from "./smallerComponents/LanguageDropdown";
+import { CHAIN_TIPS, CONTRACT_INFO } from "~~/utils/nets";
+import { useTranslation } from "react-i18next";
 
 export const Header = () => {
+  const { t } = useTranslation(); 
+  
   const { targetNetwork } = useTargetNetwork();
   const {
-    isLoading,
-    setLoading,
-    loadEscrows,
+    isLoadingEscrows,
   } = useAppState();
   const {
     contractType,
@@ -23,9 +25,9 @@ export const Header = () => {
     availableNetworks,
     changeContractType,
     changeOperationalNetwork,
+    triggerGlobalRefresh,
   } = useContractInstanceState();
   
-  const { refetch: refetchCommission } = useCommissionRate();
   const isLocalNetwork = targetNetwork.id === hardhat.id;
 
   const burgerMenuRef = useRef<HTMLDetailsElement>(null);
@@ -34,22 +36,13 @@ export const Header = () => {
   });
   
   const refresh = async () => {
-    try {
-      setLoading(true);
-
-      await loadEscrows();
-      await refetchCommission();
-
-      setLoading(false);
-    } catch (error) {
-      setLoading(false);
-    }
+    triggerGlobalRefresh();
   };
 
   const refreshButton = (
-    <button className="btn btn-secondary btn-sm pl-1 pr-1" onClick={refresh} disabled={isLoading}>
-      {!isLoading ? (
-        <ArrowPathIcon className="h-5 w-5" />
+    <button className="btn btn-secondary btn-sm pl-1 pr-1" onClick={refresh} disabled={isLoadingEscrows}>
+      {!isLoadingEscrows ? (
+        <ArrowPathIcon className="h-4 w-4" />
       ) : (
         <span className="loading loading-spinner loading-sm"></span>
       )}
@@ -60,11 +53,12 @@ export const Header = () => {
     <InlineDropdown
       label={contractType}
       options={
-        availableContractTypes.map((t) => {
+        availableContractTypes.map((ct) => {
           return {
-            value: t,
-            label: t,
-            onSelect: () => {changeContractType(t);}
+            value: ct,
+            label: ct,
+            onSelect: () => {changeContractType(ct);},
+            tipText: t(CONTRACT_INFO[ct].tip),
           };
         })
       }
@@ -79,7 +73,8 @@ export const Header = () => {
           return {
             value: n,
             label: n.toLowerCase(),
-            onSelect: () => {changeOperationalNetwork(n);}
+            onSelect: () => {changeOperationalNetwork(n);},
+            tipText: t(CHAIN_TIPS[n])
           };
         })
       }
@@ -95,6 +90,7 @@ export const Header = () => {
         </div>
       </div>
       <div className="navbar-end grow mr-4">
+        <LanguageDropdown />
         <RainbowKitCustomConnectButton />
         {isLocalNetwork && <FaucetButton />}
       </div>
