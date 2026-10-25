@@ -1,10 +1,10 @@
+import { decimals } from "./nets";
 import { formatEther } from "viem";
 import { ContractTypes } from "~~/types/nets";
-import { decimals } from "./nets";
 
 export const DAY_IN_MILLISECONDS = 1000 * 24 * 60 * 60;
 export const DAY_IN_SECONDS = 24 * 60 * 60;
-export const DEFAULT_TIME_LOCALE = 'en-GB';
+export const DEFAULT_TIME_LOCALE = "en-GB";
 
 export const formatAmount = (amount: bigint) => {
   const eth = Number(formatEther(amount));
@@ -38,13 +38,8 @@ export function roundUpTo(n: string, p: number): string {
 
 export function prettifyCoinAmount(amount: bigint, t: ContractTypes, doShowTag: boolean = false): string {
   return (
-    doShowTag
-      ? (t === ContractTypes.ETH ? 'ETH ' : '$ ')
-      : ''
-  ) +
-  roundUpTo(
-    `${Number(amount)/Math.pow(10, decimals[t])}`,
-    t === ContractTypes.ETH ? 4 : 2
+    (doShowTag ? (t === ContractTypes.ETH ? "ETH " : "$ ") : "") +
+    roundUpTo(`${Number(amount) / Math.pow(10, decimals[t])}`, t === ContractTypes.ETH ? 4 : 2)
   );
 }
 

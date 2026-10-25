@@ -19,5 +19,3 @@ node_modules
 .vscode
 .idea
 
-# cli
-dist

@@ -1,17 +1,9 @@
-
-import { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  Address,
-  createPublicClient,
-  erc20Abi,
-  http,
-  Log,
-  parseEventLogs,
-} from 'viem';
-import { useAccount, useBalance, useWatchContractEvent, useWriteContract } from 'wagmi';
-import { useContractInstanceState } from './contractInstanceContext';
-import { ContractTypes } from '~~/types/nets';
-import { useERC20Address } from './lumpsumContract/lumpsumCommon';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useContractInstanceState } from "./contractInstanceContext";
+import { useERC20Address } from "./lumpsumContract/lumpsumCommon";
+import { Address, Log, erc20Abi, parseEventLogs } from "viem";
+import { useAccount, useBalance, useWatchContractEvent, useWriteContract } from "wagmi";
+import { ContractTypes } from "~~/types/nets";
 
 export function useAdaptableBalance() {
   const { isConnected, chain, address } = useAccount();
@@ -20,24 +12,23 @@ export function useAdaptableBalance() {
   const [isLoadingERC20, setIsLoadingERC20] = useState<boolean>(false);
   const [fetchDataTrigger, setFetchDataTrigger] = useState(0);
   const fetchDataIntervalId = useRef<number | undefined>(undefined);
-  
-  const {
-    contractType
-  } = useContractInstanceState();
 
-  const {
-    addressERC20,
-    error: addressERC20Error,
-  } = useERC20Address();
+  const { contractType, publicClient } = useContractInstanceState();
+
+  const { addressERC20, error: addressERC20Error } = useERC20Address();
 
   const delay = 10_000;
 
-  const { data: giversBalance, isLoading, isError: isBalanceError } = useBalance({
+  const {
+    data: giversBalance,
+    isLoading,
+    isError: isBalanceError,
+  } = useBalance({
     address: address,
     chainId: chain?.id,
     query: {
       enabled: Boolean(isConnected && address && chain),
-      staleTime: delay
+      staleTime: delay,
     },
   });
 
@@ -49,23 +40,16 @@ export function useAdaptableBalance() {
 
     setIsERC20Error(false);
 
-    if (!isConnected || !chain
-      || addressERC20 === null
-      || typeof address === 'undefined') {
+    if (!isConnected || !chain || addressERC20 === null || typeof address === "undefined" || !publicClient) {
       return null;
     }
 
-    const publicClient = createPublicClient({
-      chain,
-      transport: http(),
-    });
-    
     return await publicClient.readContract({
       abi: erc20Abi,
       address: addressERC20,
-      functionName: 'balanceOf',
-      args: [address]
-    })
+      functionName: "balanceOf",
+      args: [address],
+    });
   };
 
   const setFetchDataInterval = (interval: number) => {
@@ -120,39 +104,32 @@ export function useAdaptableBalance() {
       giversBalance: giversBalance?.value,
       isLoading,
       isBalanceError,
-    }
+    };
   }
 
   return {
     giversBalance: valueERC20,
     isLoading: isLoadingERC20,
     isBalanceError: isERC20Error,
-  }
+  };
 }
 
-export function useERC20Event(
-  callbackAllowanceChanged: (value: bigint) => any,
-) {
+export function useERC20Event(callbackAllowanceChanged: (value: bigint) => any) {
   const { address, chainId } = useAccount();
-  const { addressERC20, error } = useERC20Address();
-  const {
-    contractType,
-    contractAddress: lumpsumAddress,
-  } = useContractInstanceState();
-
-  if (
-    typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-  ) {
-    return;
-  }
+  const { addressERC20 } = useERC20Address();
+  const { contractType, contractAddress: lumpsumAddress } = useContractInstanceState();
 
   const handleLogs = useCallback(
     async (logs: readonly Log[]) => {
+      if (typeof lumpsumAddress === "undefined" || lumpsumAddress === null) {
+        return;
+      }
+
       const decoded = parseEventLogs({
         abi: erc20Abi,
-        logs: [...logs], 
+        logs: [...logs],
       });
-      
+
       for (const log of decoded) {
         const { args } = log;
         const { owner, spender, value } = (args ?? {}) as {
@@ -160,7 +137,7 @@ export function useERC20Event(
           spender?: Address;
           value?: bigint;
         };
-        if (owner === address && spender === lumpsumAddress && typeof value !== 'undefined') {
+        if (owner === address && spender === lumpsumAddress && typeof value !== "undefined") {
           await callbackAllowanceChanged(value);
         }
       }
@@ -171,7 +148,7 @@ export function useERC20Event(
   useWatchContractEvent({
     address: addressERC20 as Address,
     abi: erc20Abi,
-    eventName: 'Approval',
+    eventName: "Approval",
     onLogs: handleLogs,
   });
 }
@@ -183,18 +160,12 @@ export function useApprovedAmount() {
   const [isLoadingERC20, setIsLoadingERC20] = useState<boolean>(false);
   const [fetchDataTrigger, setFetchDataTrigger] = useState(0);
   const fetchDataIntervalId = useRef<number | undefined>(undefined);
-  
+
   useERC20Event(setValueERC20);
 
-  const {
-    contractType,
-    contractAddress,
-  } = useContractInstanceState();
+  const { contractType, contractAddress, publicClient } = useContractInstanceState();
 
-  const {
-    addressERC20,
-    error: addressERC20Error,
-  } = useERC20Address();
+  const { addressERC20, error: addressERC20Error } = useERC20Address();
 
   const delay = 10_000;
 
@@ -206,26 +177,23 @@ export function useApprovedAmount() {
 
     setIsERC20Error(false);
 
-    if ( !isConnected
-      || !chain
-      || addressERC20 === null
-      || typeof address === 'undefined'
-      || typeof contractAddress !== 'string'
+    if (
+      !isConnected ||
+      !chain ||
+      addressERC20 === null ||
+      typeof address === "undefined" ||
+      typeof contractAddress !== "string" ||
+      !publicClient
     ) {
       return null;
     }
 
-    const publicClient = createPublicClient({
-      chain,
-      transport: http(),
-    });
-    
     return await publicClient.readContract({
       abi: erc20Abi,
       address: addressERC20,
-      functionName: 'allowance',
-      args: [address, contractAddress]
-    })
+      functionName: "allowance",
+      args: [address, contractAddress],
+    });
   };
 
   const setFetchDataInterval = (interval: number) => {
@@ -282,44 +250,42 @@ export function useApprovedAmount() {
       allowance: null,
       isLoading: false,
       isAllowanceError: true,
-    }
+    };
   }
 
   return {
     allowance: valueERC20,
     isLoading: isLoadingERC20,
     isAllowanceError: isERC20Error,
-  }
+  };
 }
 
 export function useApproveHook() {
   const { writeContractAsync, isError, error } = useWriteContract();
   const { isConnected } = useAccount();
 
-  const {
-    contractAddress: lumpsumAddress,
-  } = useContractInstanceState();
+  const { contractAddress: lumpsumAddress } = useContractInstanceState();
 
-  const {
-    addressERC20,
-    error: addressERC20Error,
-  } = useERC20Address();
+  const { addressERC20, error: addressERC20Error } = useERC20Address();
 
   const approve = async (value: bigint): Promise<void> => {
-    if (!isConnected
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof addressERC20 === 'undefined' || addressERC20 === null) {
+    if (
+      !isConnected ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof addressERC20 === "undefined" ||
+      addressERC20 === null
+    ) {
       return;
     }
     try {
       await writeContractAsync({
         address: addressERC20,
         abi: erc20Abi,
-        functionName: 'approve',
+        functionName: "approve",
         args: [lumpsumAddress, value],
       });
-    } catch (e) {
-    }
+    } catch (e) {}
   };
 
   return { approve, isError, error };

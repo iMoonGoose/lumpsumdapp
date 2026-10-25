@@ -1,109 +1,142 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import {
-  Address,
-  Log,
-  createPublicClient,
-  getAddress,
-  http,
-  isAddress,
-  parseEther,
-  parseEventLogs,
-} from 'viem';
-import { useAccount, useWatchContractEvent, useWriteContract } from 'wagmi';
-import { AddressType } from '~~/types/abitype/abi';
-import { LumpSumEscrow } from '~~/types/contractStructs';
-import { lumpsuminethAbi } from '~~/contractsData/lumpsumineth';
-import { lumpsuminerc20Abi } from '~~/contractsData/lumpsuminerc20';
-import { useContractInstanceState } from '../contractInstanceContext';
-import { ContractTypes } from '~~/types/nets';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useContractInstanceState } from "../contractInstanceContext";
+import { useTargetNetwork } from "../scaffold-eth";
+import { Address, Log, getAddress, isAddress, parseEther, parseEventLogs } from "viem";
+import { useAccount, useWatchContractEvent, useWriteContract } from "wagmi";
+import { lumpsuminerc20Abi } from "~~/contractsData/lumpsuminerc20";
+import { lumpsuminethAbi } from "~~/contractsData/lumpsumineth";
+import { AddressType } from "~~/types/abitype/abi";
+import { LumpSumEscrow } from "~~/types/contractStructs";
+import { ContractTypes } from "~~/types/nets";
 
-export function useContractEvent(
-  callbackGiver: (i: bigint) => Promise<void>,
-  callbackGrantee: (i: bigint) => Promise<void>,
-) {
+export function useContractEvent(callback: (i: number) => Promise<void>) {
   const { address } = useAccount();
-  const {
-    contractType,
-    contractAddress: lumpsumAddress,
-    contractAbi: lumpsumAbi,
-  } = useContractInstanceState();
-
-  if (
-    typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-    || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null
-  ) {
-    return;
-  }
+  const { contractType, contractAddress: lumpsumAddress, contractAbi: lumpsumAbi } = useContractInstanceState();
+  const { targetNetwork } = useTargetNetwork();
 
   const handleLogs = useCallback(
     async (logs: readonly Log[]) => {
+      if (
+        typeof lumpsumAddress === "undefined" ||
+        lumpsumAddress === null ||
+        typeof lumpsumAbi === "undefined" ||
+        lumpsumAbi === null
+      ) {
+        return;
+      }
+
       const decoded = parseEventLogs({
         abi: lumpsumAbi,
-        logs: [...logs], 
+        logs: [...logs],
       });
-      
+
       for (const log of decoded) {
         const { args } = log;
-        const { giver, grantee, i } = (args ?? {}) as {
+        const { i } = (args ?? {}) as {
           giver?: Address;
           grantee?: Address;
           i?: bigint;
         };
-        if (giver === address && typeof i !== 'undefined') {
-          await callbackGiver(i);
-        }
-        if (grantee === address && typeof i !== 'undefined') {
-          await callbackGrantee(i);
+        if (typeof i !== "undefined") {
+          await callback(Number(i));
         }
       }
     },
-    [address, callbackGiver, callbackGrantee, lumpsumAddress, contractType],
+    [address, callback, lumpsumAddress, contractType, targetNetwork?.id],
   );
 
   useWatchContractEvent({
     address: lumpsumAddress as Address,
     abi: lumpsumAbi,
-    eventName: 'LumpSumDeposited',
+    eventName: "LumpSumDeposited",
     onLogs: handleLogs,
+    chainId: targetNetwork?.id,
+    pollingInterval: 10_000,
   });
 
   useWatchContractEvent({
     address: lumpsumAddress as Address,
     abi: lumpsumAbi,
-    eventName: 'LumpSumRevoked',
+    eventName: "LumpSumRevoked",
     onLogs: handleLogs,
+    chainId: targetNetwork?.id,
+    pollingInterval: 10_000,
   });
 
   useWatchContractEvent({
     address: lumpsumAddress as Address,
     abi: lumpsumAbi,
-    eventName: 'LumpSumReleased',
+    eventName: "LumpSumReleased",
     onLogs: handleLogs,
+    chainId: targetNetwork?.id,
+    pollingInterval: 10_000,
   });
 }
 
 export function useEscrows() {
   const { isConnected, chain } = useAccount();
   const [error, setError] = useState<Error | null>(null);
-  const {
-    contractAddress: lumpsumAddress,
-    contractAbi: lumpsumAbi,
-  } = useContractInstanceState();
+  const { contractAddress: lumpsumAddress, contractAbi: lumpsumAbi, publicClient } = useContractInstanceState();
+
+  const loadEscrow = async (i: number): Promise<LumpSumEscrow | null> => {
+    setError(null);
+
+    if (
+      !isConnected ||
+      !chain ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null ||
+      !publicClient
+    ) {
+      return null;
+    }
+
+    try {
+      const escrowData = await publicClient.readContract({
+        abi: lumpsumAbi as typeof lumpsuminethAbi,
+        address: lumpsumAddress,
+        functionName: "escrows",
+        args: [BigInt(i)],
+      });
+
+      if (!escrowData) {
+        return null;
+      }
+
+      return {
+        index: BigInt(i),
+        grantee: escrowData[0],
+        fundedTimestamp: escrowData[1],
+        daysToMature: escrowData[2],
+        isReleased: escrowData[3],
+        isRevokedBeforeMaturing: escrowData[4],
+        isRevokedAfterMaturing: escrowData[5],
+        giver: escrowData[6],
+        amount: escrowData[7],
+      };
+    } catch (e) {
+      setError(new Error(`Unable to fetch escrow data due to: ${(e as Error).message}`));
+      return null;
+    }
+  };
 
   const loadEscrows = async (): Promise<Array<LumpSumEscrow>> => {
     const escrows: Array<LumpSumEscrow> = [];
     setError(null);
 
-    if (!isConnected || !chain
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null) {
+    if (
+      !isConnected ||
+      !chain ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null ||
+      !publicClient
+    ) {
       return [];
     }
-    
-    const publicClient = createPublicClient({
-      chain,
-      transport: http(),
-    });
 
     let escrowCount = 0;
 
@@ -112,7 +145,7 @@ export function useEscrows() {
         await publicClient.readContract({
           abi: lumpsumAbi,
           address: lumpsumAddress,
-          functionName: 'getEscrowCount',
+          functionName: "getEscrowCount",
         }),
       );
     } catch (e) {
@@ -126,28 +159,13 @@ export function useEscrows() {
 
     try {
       for (let i = 0; i < escrowCount; i++) {
-        const escrowData = await publicClient.readContract({
-          abi: lumpsumAbi as typeof lumpsuminethAbi,
-          address: lumpsumAddress,
-          functionName: 'escrows',
-          args: [BigInt(i)],
-        });
+        const escrow = await loadEscrow(i);
 
-        if (!escrowData) {
-          continue;
+        if (!escrow) {
+          break;
         }
 
-        escrows.push({
-          index: BigInt(i),
-          grantee: escrowData[0],
-          fundedTimestamp: escrowData[1],
-          daysToMature: escrowData[2],
-          isReleased: escrowData[3],
-          isRevokedBeforeMaturing: escrowData[4],
-          isRevokedAfterMaturing: escrowData[5],
-          giver: escrowData[6],
-          amount: escrowData[7],
-        });
+        escrows.push(escrow);
       }
     } catch (e) {
       setError(new Error(`Unable to fetch escrow data due to: ${(e as Error).message}`));
@@ -157,23 +175,19 @@ export function useEscrows() {
     return escrows;
   };
 
-  return { loadEscrows, error };
+  return { loadEscrow, loadEscrows, error };
 }
 
 export function useFundHook() {
   const { writeContractAsync, isError, error } = useWriteContract();
   const { isConnected, address: giverAddress } = useAccount();
 
-  const {
-    contractAddress: lumpsumAddress,
-    contractAbi: lumpsumAbi,
-    contractType
-  } = useContractInstanceState();
+  const { contractAddress: lumpsumAddress, contractAbi: lumpsumAbi, contractType } = useContractInstanceState();
 
   const [loading, setLoading] = useState(false);
   const [granteeAddress, setGranteeAddress] = useState<AddressType>();
-  const [daysToMature, setDaysToMature] = useState('1');
-  const [sendValue, setSendValue] = useState('');
+  const [daysToMature, setDaysToMature] = useState("1");
+  const [sendValue, setSendValue] = useState("");
 
   const { isValidAddress, checkSumAddress } = useValidatedAddress(granteeAddress);
 
@@ -183,9 +197,11 @@ export function useFundHook() {
       !giverAddress ||
       !checkSumAddress || // use the checksummed value for the write
       !daysToMature ||
-      !isValidAddress
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null
+      !isValidAddress ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null
     ) {
       return;
     }
@@ -196,13 +212,13 @@ export function useFundHook() {
         address: lumpsumAddress,
         value: contractType === ContractTypes.ETH ? parseEther(sendValue as `${number}`) : 0n,
         abi: lumpsumAbi,
-        functionName: 'fundLumpSumGrant',
+        functionName: "fundLumpSumGrant",
         args: [checkSumAddress, Math.floor(Number(daysToMature))],
       });
       setLoading(false);
       setGranteeAddress(undefined);
-      setDaysToMature('');
-      setSendValue('');
+      setDaysToMature("");
+      setSendValue("");
     } catch (error) {
       setLoading(false);
     }
@@ -228,22 +244,23 @@ export function useRevokeHook() {
   const { writeContractAsync, isError, error } = useWriteContract();
   const { isConnected } = useAccount();
 
-  const {
-    contractAddress: lumpsumAddress,
-    contractAbi: lumpsumAbi,
-  } = useContractInstanceState();
+  const { contractAddress: lumpsumAddress, contractAbi: lumpsumAbi } = useContractInstanceState();
 
   const revoke = async (index: bigint): Promise<void> => {
-    if (!isConnected
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null) {
+    if (
+      !isConnected ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null
+    ) {
       return;
     }
     try {
       await writeContractAsync({
         address: lumpsumAddress,
         abi: lumpsumAbi,
-        functionName: 'revoke',
+        functionName: "revoke",
         args: [index],
       });
     } catch (e) {}
@@ -256,22 +273,23 @@ export function useReleaseHook() {
   const { writeContractAsync, isError, error } = useWriteContract();
   const { isConnected } = useAccount();
 
-  const {
-    contractAddress: lumpsumAddress,
-    contractAbi: lumpsumAbi,
-  } = useContractInstanceState();
+  const { contractAddress: lumpsumAddress, contractAbi: lumpsumAbi } = useContractInstanceState();
 
   const release = async (index: bigint): Promise<void> => {
-    if (!isConnected
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null) {
+    if (
+      !isConnected ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null
+    ) {
       return;
     }
     try {
       await writeContractAsync({
         address: lumpsumAddress,
         abi: lumpsumAbi,
-        functionName: 'release',
+        functionName: "release",
         args: [index],
       });
     } catch (e) {}
@@ -282,40 +300,41 @@ export function useReleaseHook() {
 
 export function useReleaseWindow() {
   const { isConnected, chain } = useAccount();
-  
+
   const {
     contractAddress: lumpsumAddress,
     contractAbi: lumpsumAbi,
     contractType,
+    publicClient,
   } = useContractInstanceState();
-  
+
   const [claimPeriod, setClaimPeriod] = useState(0);
   const [error, setError] = useState<Error | null>(null);
 
   const readClaimPeriod = async (): Promise<number> => {
-    setError(null);
-
-    if (!isConnected || !chain
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null) {
+    if (
+      !isConnected ||
+      !chain ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null ||
+      !publicClient
+    ) {
       return 0;
     }
-
-    const publicClient = createPublicClient({
-      chain,
-      transport: http(),
-    });
 
     return Number(
       await publicClient.readContract({
         abi: lumpsumAbi,
         address: lumpsumAddress,
-        functionName: 'CLAIM_PERIOD_IN_DAYS',
+        functionName: "CLAIM_PERIOD_IN_DAYS",
       }),
     );
   };
 
   useEffect(() => {
+    setError(null);
     let cancelled = false;
 
     (async () => {
@@ -341,33 +360,34 @@ export function useOwner() {
     contractAddress: lumpsumAddress,
     contractAbi: lumpsumAbi,
     contractType,
+    publicClient,
   } = useContractInstanceState();
   const [owner, setOwner] = useState<Address | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
   const readOwner = async (): Promise<Address | null> => {
-    setError(null);
-
-    if (!isConnected || !chain
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null) {
+    if (
+      !isConnected ||
+      !chain ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null ||
+      !publicClient
+    ) {
       return null;
     }
 
-    const publicClient = createPublicClient({
-      chain,
-      transport: http(),
-    });
-    
     const adressNumber = await publicClient.readContract({
       abi: lumpsumAbi as typeof lumpsuminethAbi,
       address: lumpsumAddress,
-      functionName: 'owner',
-    })
+      functionName: "owner",
+    });
     return getAddress(adressNumber);
   };
 
   useEffect(() => {
+    setError(null);
     let cancelled = false;
 
     (async () => {
@@ -393,34 +413,35 @@ export function useERC20Address() {
     contractAddress: lumpsumAddress,
     contractAbi: lumpsumAbi,
     contractType,
+    publicClient,
   } = useContractInstanceState();
   const [addressERC20, setAddressERC20] = useState<Address | null>(null);
   const [error, setError] = useState<Error | null>(null);
 
   const readAddress = async (): Promise<Address | null> => {
-    setError(null);
-
-    if ( ![ContractTypes.USDT, ContractTypes.USDC].includes(contractType)
-      || !isConnected || !chain
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null) {
+    if (
+      ![ContractTypes.USDT, ContractTypes.USDC].includes(contractType) ||
+      !isConnected ||
+      !chain ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null ||
+      !publicClient
+    ) {
       return null;
     }
 
-    const publicClient = createPublicClient({
-      chain,
-      transport: http(),
-    });
-    
     const adressNumber = await publicClient.readContract({
       abi: lumpsumAbi as typeof lumpsuminerc20Abi,
       address: lumpsumAddress,
-      functionName: 'token',
-    })
+      functionName: "token",
+    });
     return getAddress(adressNumber);
   };
 
   useEffect(() => {
+    setError(null);
     let cancelled = false;
 
     (async () => {
@@ -448,6 +469,7 @@ export function useCommissionRate() {
     contractAddress: lumpsumAddress,
     contractAbi: lumpsumAbi,
     contractType,
+    publicClient,
   } = useContractInstanceState();
 
   const [rate, setRate] = useState(0);
@@ -455,24 +477,31 @@ export function useCommissionRate() {
   const chainId = chain?.id;
 
   const readCommisionRate = useCallback(async (): Promise<number> => {
-    if (!isConnected || !chain
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null) {
+    if (
+      !isConnected ||
+      !chain ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null ||
+      !publicClient
+    ) {
       return 0;
     }
 
-    const publicClient = createPublicClient({
-      chain,
-      transport: http(),
-    });
-
-    return Number(
-      await publicClient.readContract({
-        abi: lumpsumAbi,
-        address: lumpsumAddress,
-        functionName: 'commissionRatePromille',
-      }),
-    );
+    let result = 0;
+    try {
+      result = Number(
+        await publicClient.readContract({
+          abi: lumpsumAbi,
+          address: lumpsumAddress,
+          functionName: "commissionRatePromille",
+        }),
+      );
+    } catch (e) {
+      setError(e as Error);
+    }
+    return result;
   }, [isConnected, chainId, lumpsumAddress, contractType]);
 
   const refetch = useCallback(async () => {
@@ -492,10 +521,10 @@ export function useCommissionRate() {
 
     setError(null);
     readCommisionRate()
-      .then((value) => {
+      .then(value => {
         if (!cancelled) setRate(value);
       })
-      .catch((e) => {
+      .catch(e => {
         if (!cancelled) setError(e as Error);
       });
 
@@ -517,28 +546,35 @@ export function useFutureCommissionRate() {
     contractAddress: lumpsumAddress,
     contractAbi: lumpsumAbi,
     contractType,
+    publicClient,
   } = useContractInstanceState();
 
   const readCommisionRate = useCallback(async (): Promise<number> => {
-    if (!isConnected || !chain
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null
+    if (
+      !isConnected ||
+      !chain ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null ||
+      !publicClient
     ) {
       return 0;
     }
 
-    const publicClient = createPublicClient({
-      chain,
-      transport: http(),
-    });
-
-    return Number(
-      await publicClient.readContract({
-        abi: lumpsumAbi,
-        address: lumpsumAddress,
-        functionName: 'newCommissionRatePromille',
-      }),
-    );
+    let result = 0;
+    try {
+      result = Number(
+        await publicClient.readContract({
+          abi: lumpsumAbi,
+          address: lumpsumAddress,
+          functionName: "newCommissionRatePromille",
+        }),
+      );
+    } catch (e) {
+      setError(e as Error);
+    }
+    return result;
   }, [isConnected, chain, lumpsumAddress, contractType]);
 
   const refetch = useCallback(async () => {
@@ -558,10 +594,10 @@ export function useFutureCommissionRate() {
 
     setError(null);
     readCommisionRate()
-      .then((value) => {
+      .then(value => {
         if (!cancelled) setRate(value);
       })
-      .catch((e) => {
+      .catch(e => {
         if (!cancelled) setError(e as Error);
       });
 
@@ -581,6 +617,7 @@ export function useNewCommissionTimespamp() {
     contractAddress: lumpsumAddress,
     contractAbi: lumpsumAbi,
     contractType,
+    publicClient,
   } = useContractInstanceState();
 
   const [dt, setDt] = useState(0);
@@ -588,25 +625,31 @@ export function useNewCommissionTimespamp() {
   const chainId = chain?.id;
 
   const readCommisionTimespamp = useCallback(async (): Promise<number> => {
-    if (!isConnected || !chain
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null
+    if (
+      !isConnected ||
+      !chain ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null ||
+      !publicClient
     ) {
       return 0;
     }
 
-    const publicClient = createPublicClient({
-      chain,
-      transport: http(),
-    });
-
-    return Number(
-      await publicClient.readContract({
-        abi: lumpsumAbi,
-        address: lumpsumAddress,
-        functionName: 'newCommissionTimestamp',
-      }),
-    );
+    let result = 0;
+    try {
+      result = Number(
+        await publicClient.readContract({
+          abi: lumpsumAbi,
+          address: lumpsumAddress,
+          functionName: "newCommissionTimestamp",
+        }),
+      );
+    } catch (e) {
+      setError(e as Error);
+    }
+    return result;
   }, [isConnected, chain, lumpsumAddress, contractType]);
 
   const refetch = useCallback(async () => {
@@ -626,10 +669,10 @@ export function useNewCommissionTimespamp() {
 
     setError(null);
     readCommisionTimespamp()
-      .then((value) => {
+      .then(value => {
         if (!cancelled) setDt(value);
       })
-      .catch((e) => {
+      .catch(e => {
         if (!cancelled) setError(e as Error);
       });
 
@@ -645,22 +688,23 @@ export function usePlanCommissionHook() {
   const { writeContractAsync, isError, error } = useWriteContract();
   const { isConnected } = useAccount();
 
-  const {
-    contractAddress: lumpsumAddress,
-    contractAbi: lumpsumAbi,
-  } = useContractInstanceState();
+  const { contractAddress: lumpsumAddress, contractAbi: lumpsumAbi } = useContractInstanceState();
 
   const planCommission = async (rate: number): Promise<void> => {
-    if (!isConnected
-      || typeof lumpsumAddress === 'undefined' || lumpsumAddress === null
-      || typeof lumpsumAbi === 'undefined' || lumpsumAbi === null) {
+    if (
+      !isConnected ||
+      typeof lumpsumAddress === "undefined" ||
+      lumpsumAddress === null ||
+      typeof lumpsumAbi === "undefined" ||
+      lumpsumAbi === null
+    ) {
       return;
     }
     try {
       await writeContractAsync({
         address: lumpsumAddress,
         abi: lumpsumAbi,
-        functionName: 'planNewCommissionRate',
+        functionName: "planNewCommissionRate",
         args: [rate],
       });
     } catch (e) {}

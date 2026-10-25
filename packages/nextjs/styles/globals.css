@@ -7,31 +7,58 @@
   --animate-pulse-fast: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
+@theme inline {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
 @plugin "daisyui" {
   themes:
     light,
     dark --prefersdark;
 }
-
 @plugin "daisyui/theme" {
   name: "light";
 
-  --color-primary: #93bbfb;
-  --color-primary-content: #212638;
-  --color-secondary: #dae8ff;
-  --color-secondary-content: #212638;
-  --color-accent: #93bbfb;
-  --color-accent-content: #212638;
-  --color-neutral: #212638;
-  --color-neutral-content: #ffffff;
-  --color-base-100: #ffffff;
-  --color-base-200: #f4f8ff;
-  --color-base-300: #dae8ff;
-  --color-base-content: #212638;
-  --color-info: #93bbfb;
-  --color-success: #34eeb6;
-  --color-warning: #ffcf72;
-  --color-error: #ff8863;
+  --color-primary: #f8d1bd;              /* crema — destaca sobre índigo */
+  --color-primary-content: #3f3c70;
+
+  --color-secondary: #dba2c2;            /* lila medio */
+  --color-secondary-content: #3f3c70;
+
+  --color-accent: #f9ebac;               /* melocotón */
+  --color-accent-content: #8268bb;
+
+  --color-neutral: #f8d1bd;               /* índigo aún más profundo */
+  --color-neutral-content: #f9ebac;
+
+  --color-base-100: #3f3c70;             /* índigo profundo — fondo */
+  --color-base-200: #3f3c70;             /* índigo un paso más claro */
+  --color-base-300: #8268bb;             /* lila medio para bordes */
+  --color-base-content: #f8d1bd;         /* texto crema */
+
+  --color-info: #f8d1bd;   
+  --color-info-content: #3f3c70;
+
+  --color-success: #f8d1bd;   
+  --color-success-content: #3f3c70;
+
+  --color-warning: #dba2c2;
+  --color-warning-content: #8268bb;
+
+  --color-error: #dba2c2;
+  --color-error-content: #8268bb;
+
+  --color-sui-input-text: #3f3c70;
+  --color-sui-primary: #93bbfb;
+  --color-sui-primary-subtle: #c2b5da;
+  --color-sui-primary-neutral: #c2b5da;
+  --color-sui-primary-content: #636192;
+  --color-sui-accent: #8268bb;
+  --color-sui-base-content: #404558;
+  --color-sui-warning: #fadfee;
+  --color-sui-error: #ff8863;
+  --color-sui-input-border: var(--color-sui-primary-subtle);
+  --color-sui-input-background: var(--color-sui-primary-neutral);
 
   --radius-field: 0rem;
   --radius-box: 0rem;
@@ -40,34 +67,66 @@
   --tt-tailw: 6px;
 }
 
-@plugin "daisyui/theme" {
-  name: "dark";
-
-  --color-primary: #212638;
-  --color-primary-content: #f9fbff;
-  --color-secondary: #323f61;
-  --color-secondary-content: #f9fbff;
-  --color-accent: #4969a6;
-  --color-accent-content: #f9fbff;
-  --color-neutral: #f9fbff;
-  --color-neutral-content: #385183;
-  --color-base-100: #385183;
-  --color-base-200: #2a3655;
-  --color-base-300: #212638;
-  --color-base-content: #f9fbff;
-  --color-info: #385183;
-  --color-success: #34eeb6;
-  --color-warning: #ffcf72;
-  --color-error: #ff8863;
-
-  --radius-field: 0rem;
-  --radius-box: 0rem;
-  --radius-selector: 0rem;
-
-  --tt-tailw: 6px;
-  --tt-bg: var(--color-primary);
+.btn[disabled]:not(.btn-link, .btn-ghost) {
+  background-color: #605eaa77;
 }
 
+::placeholder {
+  color: var(--color-sui-accent);
+  opacity: 0.7;
+}
+.rdp-root {
+  color: #c2b5da;
+  width: 250px;
+  min-height: 250px;
+}
+.rdp-nav {
+  width: 30%;
+  padding-bottom: 0px;
+  margin-bottom: 0px;
+}
+.rdp-month_caption {
+  justify-self: right;
+  font-size: medium;
+  padding-bottom: 1rem;
+}
+.rdp-weekday {
+  justify-content: center;
+  justify-items: center;
+  justify-self: center;
+  padding-bottom: 0.5rem;
+}
+.rdp-months .rdp-month_grid {
+  width: 100%;
+}
+.rdp-month_grid {
+  height: 200px;
+}
+.rdp-chevron polygon  {
+  fill: #c2b5da;
+}
+.rdp-selected {
+  color: #ff8863;
+}
+.rdp-day {
+  justify-content: center;
+  justify-items: center;
+  justify-self: center;
+}
+.rdp-today {
+  color: #f8d1bd;
+}
+.rdp-disabled {
+  opacity: 0.7;
+}
+.rdp-day :hover {
+  color: #ff8863;
+  opacity: 0.7;
+  
+}
+.rdp-disabled :hover {
+  color: #c2b5da;
+}
 /*
   The default border color has changed to `currentColor` in Tailwind CSS v4,
   so we've added these compatibility styles to make sure everything still
@@ -107,6 +166,10 @@
   background: var(--color-base-200);
 }
 
+:root {
+  font-family: var(--font-sans);
+}
+
 .btn {
   box-shadow: none;
 }
@@ -118,3 +181,4 @@
 .link:hover {
   opacity: 80%;
 }
+

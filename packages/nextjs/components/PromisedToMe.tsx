@@ -1,7 +1,7 @@
 "use client";
 
-import { useTranslation } from "react-i18next";
 import { PromisedEscrowList } from "./smallerComponents/PromisedEscrowList";
+import { useTranslation } from "react-i18next";
 import { useAppState } from "~~/hooks/appContext";
 
 export const PromisedToMe = () => {
@@ -19,11 +19,11 @@ export const PromisedToMe = () => {
 
   return (
     <div className="overflow-x-auto w-full flex flex-col items-center justify-center">
-      {
-        !escrowsPromised || escrowsPromised.length === 0
-        ? <p className="m-0">{t('No escrows found')}</p>
-        : <PromisedEscrowList escrows={escrowsPromised} releaseWindowDuration={releaseWindowDuration} />
-      }
+      {!escrowsPromised || escrowsPromised.length === 0 ? (
+        <p className="m-0">{t("No escrows found")}</p>
+      ) : (
+        <PromisedEscrowList escrows={escrowsPromised} releaseWindowDuration={releaseWindowDuration} />
+      )}
     </div>
   );
 };

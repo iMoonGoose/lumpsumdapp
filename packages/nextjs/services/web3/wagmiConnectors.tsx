@@ -41,12 +41,13 @@ export const wagmiConnectors = () => {
     [
       {
         groupName: "Supported Wallets",
+        // @ts-expect-error
         wallets,
       },
     ],
 
     {
-      appName: "lumpsum-eth-1",
+      appName: "lumpsum",
       projectId: scaffoldConfig.walletConnectProjectId,
     },
   );

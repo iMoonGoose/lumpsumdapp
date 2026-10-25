@@ -1,19 +1,19 @@
 "use client";
 
 import { NetworkOptions } from "./NetworkOptions";
+import { useTranslation } from "react-i18next";
 import { useDisconnect } from "wagmi";
 import { ArrowLeftEndOnRectangleIcon, ChevronDownIcon } from "@heroicons/react/24/outline";
-import { useTranslation } from "react-i18next";
 
 export const WrongNetworkDropdown = () => {
   const { t } = useTranslation();
-  
+
   const { disconnect } = useDisconnect();
 
   return (
     <div className="dropdown dropdown-end mr-2">
       <label tabIndex={0} className="btn btn-error btn-sm dropdown-toggle gap-1">
-        <span>{t('Wrong network')}</span>
+        <span>{t("Wrong network")}</span>
         <ChevronDownIcon className="h-6 w-4 ml-2 sm:ml-0" />
       </label>
       <ul tabIndex={0} className="dropdown-content menu p-2 mt-1 shadow-lg bg-base-200 gap-1">
@@ -21,7 +21,7 @@ export const WrongNetworkDropdown = () => {
         <li>
           <button className="menu-item text-error btn-sm flex gap-3 py-3" type="button" onClick={() => disconnect()}>
             <ArrowLeftEndOnRectangleIcon className="h-6 w-4 ml-2 sm:ml-0" />
-            <span>{t('Disconnect')}</span>
+            <span>{t("Disconnect")}</span>
           </button>
         </li>
       </ul>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, ReactNode } from 'react';
+import { ReactNode, useState } from "react";
 
 interface CollapsibleProps {
   title: ReactNode;
@@ -15,7 +15,7 @@ export function Collapsible({
   children,
   defaultOpen = false,
   disabled = false,
-  className = '',
+  className = "",
 }: CollapsibleProps) {
   const [open, setOpen] = useState(defaultOpen);
 
@@ -23,14 +23,14 @@ export function Collapsible({
     <div className={`bg-base-200 rounded-box border border-base-300 ${className}`}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(o => !o)}
         aria-expanded={open}
         disabled={disabled}
         className="w-full flex items-center justify-between p-4 text-left font-medium hover:bg-base-300 rounded-box transition-colors"
       >
         <span>{title}</span>
         <svg
-          className={`w-4 h-4 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
           viewBox="0 0 20 20"
           fill="currentColor"
         >
@@ -42,11 +42,7 @@ export function Collapsible({
         </svg>
       </button>
 
-      {open && (
-        <div className="p-4 border-t border-base-300">
-          {children}
-        </div>
-      )}
+      {open && <div className="p-4 border-t border-base-300">{children}</div>}
     </div>
   );
 }

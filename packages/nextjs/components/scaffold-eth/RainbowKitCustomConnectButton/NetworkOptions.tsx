@@ -1,11 +1,11 @@
 "use client";
 
 import { useTheme } from "next-themes";
+import { useTranslation } from "react-i18next";
 import { useAccount, useSwitchChain } from "wagmi";
 import { ArrowsRightLeftIcon } from "@heroicons/react/24/solid";
 import { getNetworkColor } from "~~/hooks/scaffold-eth";
 import { getTargetNetworks } from "~~/utils/scaffold-eth";
-import { useTranslation } from "react-i18next";
 
 const allowedNetworks = getTargetNetworks();
 
@@ -15,7 +15,7 @@ type NetworkOptionsProps = {
 
 export const NetworkOptions = ({ hidden = false }: NetworkOptionsProps) => {
   const { t } = useTranslation();
-  
+
   const { switchChain } = useSwitchChain();
   const { chain } = useAccount();
   const { resolvedTheme } = useTheme();
@@ -36,7 +36,7 @@ export const NetworkOptions = ({ hidden = false }: NetworkOptionsProps) => {
             >
               <ArrowsRightLeftIcon className="h-6 w-4 ml-2 sm:ml-0" />
               <span>
-                {t('Switch to')}{" "}
+                {t("Switch to")}{" "}
                 <span
                   style={{
                     color: getNetworkColor(allowedNetwork, isDarkMode),
