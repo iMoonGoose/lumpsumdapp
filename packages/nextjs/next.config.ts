@@ -2,7 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: 'export',
-  distDir: 'dist',
+  distDir: '../../docs',
+  basePath: process.env.NODE_ENV === 'production' ? '/lumpsumdapp' : '',
+  assetPrefix: process.env.NODE_ENV === 'production' ? '/lumpsumdapp/' : '',
+  images: {
+    unoptimized: true,
+  },
   reactStrictMode: true,
   devIndicators: false,
   typescript: {
